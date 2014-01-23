@@ -2,7 +2,10 @@ import bz2, struct
 
 class PagesFile(object):
 	def __init__(self, fi, mode = "r"):
-		self.handle = fi
+		if isinstance(fi, str):
+			self.handle = open(fi, mode+"b")
+		else:
+			self.handle = fi
 		self.mode = mode
 		self.maxPlainSize = 1000000
 		self.buffer = None
