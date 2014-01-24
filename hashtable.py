@@ -100,6 +100,11 @@ class HashTableFile(object):
 				if keyHash == primaryKeyHash:
 					raise Exception("Hash table full")
 
+		#Check if we need to resize
+		if self.binsInUse > self.hashMask * 2. / 3.:
+			#Increase mask size by two bits
+			self.allocate_mask_size(self.hashMaskSize + 2)
+
 	def _attempt_to_read_bin(self, keyHash, k, matchAny = False):
 		if keyHash >= self.hashMask:
 			raise IndexError("Invalid bin")
@@ -300,11 +305,12 @@ class HashTableFile(object):
 		self.handle.write('\x00')
 
 	def allocate_mask_size(self, maskBits):
+		if self.verbose: print "allocate_mask_size", maskBits
 
 		#Copy table to temp file
 		self.flush()
 		self.handle.close()
-		tmpFilename = self.filename + ".tmp"
+		tmpFilename = self.filename + str(random.randint(0,1000000)) + ".tmp"
 		os.rename(self.filename, tmpFilename)
 		oldTable = HashTableFile(tmpFilename)
 
@@ -315,14 +321,18 @@ class HashTableFile(object):
 		self._init_storage()
 
 		#Copy data from old table
-		print "old length", len(oldTable)
+		#print "old length", len(oldTable)
 		for k in oldTable:
-			print "copying", k
+			#print "copying", k
 			self.__setitem__(k, oldTable[k])
+		self.flush()
 
 		#Delete old table temp file
 		del oldTable
-		os.unlink(tmpFilename)
+		try:
+			os.unlink(tmpFilename)
+		except:
+			pass
 
 class HashTableFileIter(object):
 	def __init__(self, parent):
@@ -361,7 +371,7 @@ if __name__ == "__main__":
 	table.verbose = 0
 	
 	test = dict()
-	for i in range(5):
+	for i in range(50):
 		test[RandomObj()] = RandomObj()
 
 	for k in test:
@@ -386,5 +396,5 @@ if __name__ == "__main__":
 
 	print "Num items", len(table)
 
-	table.allocate_mask_size(5)
+	table.allocate_mask_size(10)
 
