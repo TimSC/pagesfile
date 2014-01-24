@@ -43,6 +43,8 @@ class PagesFile(object):
 		else:
 			self.buffer += data
 
+		self.virtualCursor += len(data)
+
 		if len(self.buffer) > self.maxPlainSize:
 			page = self.buffer[:self.maxPlainSize]
 			self.buffer = self.buffer[self.maxPlainSize:]
@@ -128,6 +130,9 @@ class PagesFile(object):
 		return self.virtualCursor
 
 	def seek(self, pos):
+		if self.mode == "w":
+			raise Exception("Seeking in write mode not supported")
+
 		self.virtualCursor = pos
 
 	def _get_uncompressed_length(self):
@@ -155,6 +160,9 @@ class PagesFile(object):
 		self.plainLen = lastPageMeta[2] + lastPageMeta[3]
 
 	def __len__(self):
+		if self.mode == "w":
+			return self.writtenPlainBytes
+
 		if self.plainLen is None:
 			self._get_uncompressed_length()
 
