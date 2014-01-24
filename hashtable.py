@@ -33,7 +33,7 @@ class HashTableFile(object):
 		self.handle.flush()
 
 	def _init_storage(self):
-		print "_init_storage"
+		if self.verbose: print "_init_storage"
 		self.handle.seek(0)
 		self.handle.write("hash")
 		self.numItems = 0
@@ -51,7 +51,7 @@ class HashTableFile(object):
 		self.handle.flush()
 
 	def _read_storage_params(self):
-		print "_read_storage_params"
+		if self.verbose: print "_read_storage_params"
 		self.handle.seek(0)
 		if self.handle.read(4) != "hash":
 			raise Exception("Unknown file format")
@@ -61,11 +61,11 @@ class HashTableFile(object):
 		self.hashMask = pow(2, self.hashMaskSize)
 
 	def __getitem__(self, k):
-		print "getitem", k, type(k)
+		#print "getitem", k, type(k)
 		primaryKeyHash = self._hash_label(k) % self.hashMask
 		keyHash = primaryKeyHash
 		found = 0
-		print "primary key", primaryKeyHash
+		#print "primary key", primaryKeyHash
 		while not found:
 			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			if ret == 1:
@@ -84,10 +84,10 @@ class HashTableFile(object):
 
 	def __setitem__(self, k, v):
 
-		print "setitem", k , type(k),"=", v
+		#print "setitem", k , type(k),"=", v
 
 		primaryKeyHash = self._hash_label(k) % self.hashMask
-		print "primary key", primaryKeyHash
+		#print "primary key", primaryKeyHash
 
 		keyHash = primaryKeyHash
 		done = 0
