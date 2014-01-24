@@ -282,10 +282,13 @@ class HashTableFile(object):
 
 				flags = flags | 0x02
 				self.handle.seek(binFiOffset)
-				newBinVals = self.binStruct.pack(flags, existingHash, existingKey, existingVal)
+				newBinVals = self.binStruct.pack(flags, 0, 0, 0)
 				self.handle.write(newBinVals)
 
+				self._mark_label_unused(existingKey)
+				self._mark_label_unused(existingVal)
 				self.numItems -= 1
+				
 				return
 				
 			if ret == -1:
