@@ -103,11 +103,12 @@ class HashTableFile(object):
 			#Update existing entry
 			self._attempt_to_write_bin(actualBin, k, v)
 
-		#if ret == -1 and len(trashHashes) > 0:
-		#	#Use trash location for data
-		#	done = self._attempt_to_write_bin(keyHash, k, v)
+		if ret == -1 and len(trashHashes) > 0:
+			#Use trash location for data
+			print "YAY"
+			done = self._attempt_to_write_bin(trashHashes[0], k, v)
 
-		if ret == -1:
+		if ret == -1 and len(trashHashes) == 0:
 			#Use new location for data
 			self._attempt_to_write_bin(actualBin, k, v)
 		
@@ -168,7 +169,7 @@ class HashTableFile(object):
 		inTrash = flags & 0x02
 		#print "inUse", inUse
 
-		if not inUse:
+		if not inUse or inTrash:
 			klo = self._write_label(k)
 			vlo = self._write_label(v)
 
@@ -389,11 +390,20 @@ if __name__ == "__main__":
 	print "Num items", len(table)
 
 	#Delete random value
-	randKey = random.choice(test.keys())
-	print "Delete key", randKey
+	for i in range(5):
+		randKey = random.choice(test.keys())
+		print "Delete key", randKey
 
-	del test[randKey]
-	del table[randKey]
+		del test[randKey]
+		del table[randKey]
+
+		k = RandomObj()
+		v = RandomObj()
+		table[k] = v
+		test[k] = v
+		print "Set", k, "=" , test[k]
+		
+		print "Read back", k, "=", table[k]
 
 	for i, k in enumerate(table):
 		v = table[k]
