@@ -12,7 +12,6 @@ class HashTableFile(object):
 
 		self.headerReservedSpace = 64
 		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, items
-		self.binStruct = struct.Struct(">BQQQ") #Flags, hash, key, value
 		self.labelReservedSpace = 64
 		self.verbose = 0
 
@@ -32,6 +31,16 @@ class HashTableFile(object):
 		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
 		self.handle.flush()
 
+	def _set_bin_struct(self):
+		if self.hashMaskSize <= 8:
+			self.binStruct = struct.Struct(">BBQQ") #Flags, hash, key, value
+		elif self.hashMaskSize <= 16:
+			self.binStruct = struct.Struct(">BHQQ") #Flags, hash, key, value
+		elif self.hashMaskSize <= 32:
+			self.binStruct = struct.Struct(">BIQQ") #Flags, hash, key, value
+		else:
+			self.binStruct = struct.Struct(">BQQQ") #Flags, hash, key, value
+
 	def _init_storage(self):
 		if self.verbose: print "_init_storage"
 		self.handle.seek(0)
@@ -39,6 +48,7 @@ class HashTableFile(object):
 		self.numItems = 0
 		self.binsInUse = 0
 		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
+		self._set_bin_struct()
 
 		self.labelStart = self.hashMask * self.binStruct.size + self.headerReservedSpace
 		self.handle.seek(self.labelStart)
@@ -59,6 +69,7 @@ class HashTableFile(object):
 		header = self.handle.read(self.hashHeaderStruct.size)
 		self.hashMaskSize, self.numItems, self.binsInUse = self.hashHeaderStruct.unpack(header)
 		self.hashMask = pow(2, self.hashMaskSize)
+		self._set_bin_struct()
 
 	def _probe_bins(self, k):
 		primaryKeyHash = self._hash_label(k) % self.hashMask
@@ -376,7 +387,7 @@ if __name__ == "__main__":
 	table.verbose = 0
 	
 	test = dict()
-	for i in range(5):
+	for i in range(1000):
 		test[RandomObj()] = RandomObj()
 
 	for k in test:
