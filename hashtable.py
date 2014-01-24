@@ -14,8 +14,8 @@ class HashTableFile(object):
 			self.handle = fi
 
 		self.headerReservedSpace = 64
-		self.hashHeaderStruct = struct.Struct(">IQ") #Hash bit length size, items
-		self.binStruct = struct.Struct(">BQQQ") #In use, hash, key, value
+		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, items
+		self.binStruct = struct.Struct(">BQQQ") #Flags, hash, key, value
 		self.labelReservedSpace = 64
 		self.verbose = 0
 
@@ -32,7 +32,7 @@ class HashTableFile(object):
 
 	def flush(self):
 		self.handle.seek(4)
-		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems))
+		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
 		self.handle.flush()
 
 	def _init_storage(self):
@@ -40,7 +40,8 @@ class HashTableFile(object):
 		self.handle.seek(0)
 		self.handle.write("hash")
 		self.numItems = 0
-		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems))
+		self.binsInUse = 0
+		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
 
 		self.labelStart = self.hashMask * self.binStruct.size + self.headerReservedSpace
 		self.handle.seek(self.labelStart)
@@ -59,7 +60,7 @@ class HashTableFile(object):
 			raise Exception("Unknown file format")
 
 		header = self.handle.read(self.hashHeaderStruct.size)
-		self.hashMaskSize, self.numItems = self.hashHeaderStruct.unpack(header)
+		self.hashMaskSize, self.numItems, self.binsInUse = self.hashHeaderStruct.unpack(header)
 		self.hashMask = pow(2, self.hashMaskSize)
 
 	def __getitem__(self, k):
@@ -68,7 +69,7 @@ class HashTableFile(object):
 		keyHash = primaryKeyHash
 		found = 0
 		while not found:
-			ret, val = self._attempt_to_read_bin(keyHash, k)
+			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			if ret == 1:
 				return val
 			if ret == -1:
@@ -91,31 +92,40 @@ class HashTableFile(object):
 		while not done:
 			done = self._attempt_to_write_bin(keyHash, k, v)
 			if not done:
+				if self.verbose: print "hash collision detected"
 				keyHash += 1
 				keyHash = keyHash % self.hashMask
 				if keyHash == primaryKeyHash:
 					raise Exception("Hash table full")
 
-	def _attempt_to_read_bin(self, keyHash, k):
+	def _attempt_to_read_bin(self, keyHash, k, matchAny = False):
+		if keyHash >= self.hashMask:
+			raise IndexError("Invalid bin")
+
 		binFiOffset = keyHash * self.binStruct.size + self.headerReservedSpace
 		#print "binFiOffset", binFiOffset
 		self.handle.seek(binFiOffset)
 		tmp = self.handle.read(self.binStruct.size)
-		inUse, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)		
+		flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)		
 		#print inUse, existingHash, existingKey, existingVal, self._get_label(existingKey), keyHash
+		inUse = flags & 0x01
+		inTrash = flags & 0x02
 
 		if not inUse:
-			return -1, None #Empty bin
+			return -1, None, None #Empty bin
 
-		if existingHash != keyHash:
-			return 0, None #No match
+		if inTrash:
+			return 0, None, None #Trashed bin
+
+		if not matchAny and existingHash != keyHash:
+			return 0, None, None #No match
 
 		oldKey = self._get_label(existingKey)
-		if oldKey != self._mash_label(k):
-			return 0, None #No match
+		if not matchAny and oldKey != self._mash_label(k):
+			return 0, None, None #No match
 
 		#Match
-		return 1, self._get_label(existingVal)
+		return 1, oldKey, self._get_label(existingVal)
 
 	def _mash_label(self, label):
 		#Encoding a label can make subtle changes
@@ -130,7 +140,8 @@ class HashTableFile(object):
 		#print "binFiOffset", binFiOffset
 		self.handle.seek(binFiOffset)
 		tmp = self.handle.read(self.binStruct.size)
-		inUse, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
+		flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
+		inUse = flags & 0x01
 		#print "inUse", inUse
 
 		if not inUse:
@@ -144,6 +155,7 @@ class HashTableFile(object):
 			self.handle.flush()
 
 			self.numItems += 1
+			self.binsInUse += 1
 			if self.verbose: print "data inserted"
 			return 1
 
@@ -246,11 +258,59 @@ class HashTableFile(object):
 		raise Exception("Unsupported data type: "+str(labelType))
 
 	def __delitem__(self, k):
-		pass	
+		primaryKeyHash = self._hash_label(k) % self.hashMask
+		keyHash = primaryKeyHash
+		found = 0
+		while not found:
+			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			if ret == 1:
+				#Found bin, now set trash flag
+				binFiOffset = keyHash * self.binStruct.size + self.headerReservedSpace
+				self.handle.seek(binFiOffset)
+				tmp = self.handle.read(self.binStruct.size)
+				flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
+
+				flags = flags | 0x02
+				self.handle.seek(binFiOffset)
+				newBinVals = self.binStruct.pack(flags, existingHash, existingKey, existingVal)
+				self.handle.write(newBinVals)
+
+				self.numItems -= 1
+				return
+				
+			if ret == -1:
+				raise Exception("Not key found")
+
+			keyHash += 1
+			keyHash = keyHash % self.hashMask	
+
+			if keyHash == primaryKeyHash:
+				raise Exception("Not key found")
+
+	def __iter__(self):
+		return HashTableFileIter(self)
 
 	def _mark_label_unused(self, pos):
 		self.handle.seek(pos)
 		self.handle.write('\x00')
+
+class HashTableFileIter(object):
+	def __init__(self, parent):
+		self.parent = parent
+		self.nextBinNum = 0
+
+	def __iter__(self):
+		return self
+
+	def next(self):
+		while True:
+			if self.nextBinNum >= self.parent.hashMask:
+				raise StopIteration()
+
+			found, key, val = self.parent._attempt_to_read_bin(self.nextBinNum, None, True)
+			self.nextBinNum += 1
+			if found == 1:
+				return key
 
 def RandomObj():
 	ty = random.randint(0, 2)
@@ -264,7 +324,8 @@ def RandomObj():
 if __name__ == "__main__":
 	os.unlink("table.hash")
 	table = HashTableFile("table.hash")
-
+	table.verbose = 0
+	
 	test = dict()
 	for i in range(5):
 		test[RandomObj()] = RandomObj()
@@ -276,4 +337,16 @@ if __name__ == "__main__":
 	for k in test:
 		print k, "is", table[k], ", expected", test[k]
 
+	print "Num items", len(table)
 
+	#Delete random value
+	randKey = random.choice(test.keys())
+	print "Delete key", randKey
+
+	del test[randKey]
+	del table[randKey]
+
+	for i, k in enumerate(table):
+		print i, k
+
+	print "Num items", len(table)
