@@ -8,7 +8,8 @@ class PagesFile(object):
 			self.handle = fi
 		self.mode = mode
 		self.maxPlainSize = 1000000
-		self.buffer = None
+		self.buffer = []
+		self.bufferLen = 0
 		self.method = "bz2"
 		self.writtenPlainBytes = 0
 		self.virtualCursor = 0
@@ -31,23 +32,26 @@ class PagesFile(object):
 
 	def flush(self):
 		if self.buffer is not None:
-			self._write_page(self.buffer)
-		self.buffer = None
+			self._write_page("".join(self.buffer))
+		self.buffer = []
+		self.bufferLen = 0
 
 	def write(self, data):
+		#http://www.skymind.com/~ocrow/python_string/
+
 		if self.mode != "w":
 			raise Exception("Wrong file mode, cannot write")
 
-		if self.buffer is None:
-			self.buffer = data[:] #Get a local copy
-		else:
-			self.buffer += data
+		self.buffer.append(data)
 
 		self.virtualCursor += len(data)
+		self.bufferLen += len(data)
 
-		if len(self.buffer) > self.maxPlainSize:
-			page = self.buffer[:self.maxPlainSize]
-			self.buffer = self.buffer[self.maxPlainSize:]
+		if self.bufferLen >= self.maxPlainSize:
+			concatBuff = "".join(self.buffer)
+			page = concatBuff[:self.maxPlainSize]
+			self.buffer = [concatBuff[self.maxPlainSize:]]
+			self.bufferLen = len(self.buffer[0])
 			self._write_page(page)
 
 	def _refresh_page_index(self):
