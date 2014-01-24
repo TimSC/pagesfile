@@ -97,20 +97,22 @@ class HashTableFile(object):
 	def __setitem__(self, k, v):
 
 		#print "setitem", k , type(k),"=", v
+		ret, key, val, trashHashes, actualBin = self._probe_bins(k)
 
-		primaryKeyHash = self._hash_label(k) % self.hashMask
-		#print "primary key", primaryKeyHash
+		if ret == 1:
+			#Update existing entry
+			self._attempt_to_write_bin(actualBin, k, v)
 
-		keyHash = primaryKeyHash
-		done = 0
-		while not done:
-			done = self._attempt_to_write_bin(keyHash, k, v)
-			if not done:
-				if self.verbose: print "hash collision detected"
-				keyHash += 1
-				keyHash = keyHash % self.hashMask
-				if keyHash == primaryKeyHash:
-					raise Exception("Hash table full")
+		#if ret == -1 and len(trashHashes) > 0:
+		#	#Use trash location for data
+		#	done = self._attempt_to_write_bin(keyHash, k, v)
+
+		if ret == -1:
+			#Use new location for data
+			self._attempt_to_write_bin(actualBin, k, v)
+		
+		if ret == -2:
+			raise Exception("Hash table full")
 
 		#Check if we need to resize
 		if self.binsInUse > self.hashMask * 2. / 3.:
@@ -167,7 +169,6 @@ class HashTableFile(object):
 		#print "inUse", inUse
 
 		if not inUse:
-			#Write to primary bin
 			klo = self._write_label(k)
 			vlo = self._write_label(v)
 
@@ -201,9 +202,8 @@ class HashTableFile(object):
 						if self.verbose: print "value unchanged"
 						return 1 #No change was made to value
 
-			#Hash collision
-			#Find an alternative bin
-		return 0
+			#Key does not match expected value
+			raise Exception("Internal error writing to bin")
 
 	def _write_label(self, label):
 		self.handle.seek(0,2) #Seek to end
@@ -376,7 +376,7 @@ if __name__ == "__main__":
 	table.verbose = 0
 	
 	test = dict()
-	for i in range(50):
+	for i in range(5):
 		test[RandomObj()] = RandomObj()
 
 	for k in test:
