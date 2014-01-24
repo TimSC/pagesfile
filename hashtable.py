@@ -3,15 +3,12 @@ import struct, json, os, random, string, hashlib
 
 class HashTableFile(object):
 	def __init__(self, fi):
-		createFile = False
-		if isinstance(fi, str):
-			createFile = not os.path.isfile(fi)
-			if createFile:
-				self.handle = open(fi, "w+b")
-			else:
-				self.handle = open(fi, "r+b")
+		createFile = not os.path.isfile(fi)
+		self.filename = fi
+		if createFile:
+			self.handle = open(fi, "w+b")
 		else:
-			self.handle = fi
+			self.handle = open(fi, "r+b")
 
 		self.headerReservedSpace = 64
 		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, items
@@ -64,29 +61,34 @@ class HashTableFile(object):
 		self.hashMask = pow(2, self.hashMaskSize)
 
 	def __getitem__(self, k):
-
+		print "getitem", k, type(k)
 		primaryKeyHash = self._hash_label(k) % self.hashMask
 		keyHash = primaryKeyHash
 		found = 0
+		print "primary key", primaryKeyHash
 		while not found:
 			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			if ret == 1:
 				return val
 			if ret == -1:
-				raise Exception("Not key found")
+				raise IndexError("Key not found")
 
 			keyHash += 1
 			keyHash = keyHash % self.hashMask	
 
 			if keyHash == primaryKeyHash:
-				raise Exception("Not key found")
+				raise IndexError("Key not found (2)")
 
 	def __len__(self):
 		return self.numItems
 
 	def __setitem__(self, k, v):
 
+		print "setitem", k , type(k),"=", v
+
 		primaryKeyHash = self._hash_label(k) % self.hashMask
+		print "primary key", primaryKeyHash
+
 		keyHash = primaryKeyHash
 		done = 0
 		while not done:
@@ -110,6 +112,8 @@ class HashTableFile(object):
 		#print inUse, existingHash, existingKey, existingVal, self._get_label(existingKey), keyHash
 		inUse = flags & 0x01
 		inTrash = flags & 0x02
+		#print keyHash, "flagsA", flags
+		#if inUse: print keyHash, "binkey", self._get_label(existingKey)
 
 		if not inUse:
 			return -1, None, None #Empty bin
@@ -142,6 +146,7 @@ class HashTableFile(object):
 		tmp = self.handle.read(self.binStruct.size)
 		flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
 		inUse = flags & 0x01
+		inTrash = flags & 0x02
 		#print "inUse", inUse
 
 		if not inUse:
@@ -214,7 +219,7 @@ class HashTableFile(object):
 			#UTF-8 string
 			lenBin = self.handle.read(4)
 			textLen = struct.unpack(">I", lenBin)[0]
-			return self.handle.read(textLen).decode("utf-8")
+			return str(self.handle.read(textLen).decode("utf-8"))
 
 		if labelType == 2:
 			#JSON data
@@ -294,6 +299,31 @@ class HashTableFile(object):
 		self.handle.seek(pos)
 		self.handle.write('\x00')
 
+	def allocate_mask_size(self, maskBits):
+
+		#Copy table to temp file
+		self.flush()
+		self.handle.close()
+		tmpFilename = self.filename + ".tmp"
+		os.rename(self.filename, tmpFilename)
+		oldTable = HashTableFile(tmpFilename)
+
+		#Recreate table
+		self.hashMaskSize = maskBits
+		self.hashMask = pow(2, self.hashMaskSize)
+		self.handle = open(self.filename, "w+b")
+		self._init_storage()
+
+		#Copy data from old table
+		print "old length", len(oldTable)
+		for k in oldTable:
+			print "copying", k
+			self.__setitem__(k, oldTable[k])
+
+		#Delete old table temp file
+		del oldTable
+		os.unlink(tmpFilename)
+
 class HashTableFileIter(object):
 	def __init__(self, parent):
 		self.parent = parent
@@ -310,6 +340,7 @@ class HashTableFileIter(object):
 			found, key, val = self.parent._attempt_to_read_bin(self.nextBinNum, None, True)
 			self.nextBinNum += 1
 			if found == 1:
+				#print "Iterator pos", self.nextBinNum - 1
 				return key
 
 def RandomObj():
@@ -322,7 +353,10 @@ def RandomObj():
 	return (RandomObj(), RandomObj())
 
 if __name__ == "__main__":
-	os.unlink("table.hash")
+	try:
+		os.unlink("table.hash")
+	except:
+		pass
 	table = HashTableFile("table.hash")
 	table.verbose = 0
 	
@@ -347,7 +381,10 @@ if __name__ == "__main__":
 	del table[randKey]
 
 	for i, k in enumerate(table):
-		print i, k
+		v = table[k]
+		print i, k, v
 
 	print "Num items", len(table)
+
+	table.allocate_mask_size(5)
 
