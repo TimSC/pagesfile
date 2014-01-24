@@ -387,7 +387,7 @@ if __name__ == "__main__":
 	table.verbose = 0
 	
 	test = dict()
-	for i in range(1000):
+	for i in range(1000000):
 		test[RandomObj()] = RandomObj()
 
 	for k in test:
