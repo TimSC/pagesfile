@@ -78,9 +78,10 @@ class HashTableFile(object):
 		trashHashes = []
 		#print "primary key", primaryKeyHash
 		while not found:
+			#print "look in bin", keyHash
 			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			inUse = flags & 0x01
-			inTrash = flags & 0x02			
+			inTrash = flags & 0x02		
 
 			if ret == 1:
 				return 1, key, val, trashHashes, keyHash
@@ -142,8 +143,11 @@ class HashTableFile(object):
 		#print inUse, existingHash, existingKey, existingVal, self._get_label(existingKey), keyHash
 		inUse = flags & 0x01
 		inTrash = flags & 0x02
+		existingRawKey = flags & 0x04
+		existingRawValue = flags & 0x08
 		#print keyHash, "flagsA", flags
-		#if inUse: print keyHash, "binkey", self._get_label(existingKey)
+		#if inUse and not existingRawKey: print keyHash, "binkey", self._get_label(existingKey)
+		#if inUse and existingRawKey: print keyHash, "binkey", existingKey
 
 		if not inUse:
 			return -1, flags, None, None #Empty bin
@@ -154,12 +158,21 @@ class HashTableFile(object):
 		if not matchAny and existingHash != keyHash:
 			return 0, flags, None, None #No match
 
-		oldKey = self._get_label(existingKey)
+		if existingRawKey:
+			oldKey = existingKey
+		else:
+			oldKey = self._get_label(existingKey)
+
 		if not matchAny and oldKey != self._mash_label(k):
 			return 0, flags, None, None #No match
 
 		#Match
-		return 1, flags, oldKey, self._get_label(existingVal)
+		if existingRawValue:
+			val = existingVal
+		else:
+			val = self._get_label(existingVal)
+
+		return 1, flags, oldKey, val
 
 	def _mash_label(self, label):
 		#Encoding a label can make subtle changes
@@ -177,14 +190,26 @@ class HashTableFile(object):
 		flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
 		inUse = flags & 0x01
 		inTrash = flags & 0x02
+		existingRawKey = flags & 0x04
+		existingRawValue = flags & 0x08
 		#print "inUse", inUse
 
 		if not inUse or inTrash:
-			klo = self._write_label(k)
-			vlo = self._write_label(v)
+			newFlags = 0x01 #In use
+			if isinstance(k, int):
+				klo = k
+				newFlags = newFlags | 0x04 #Key is a raw int
+			else:
+				klo = self._write_label(k)
+			
+			if isinstance(v, int):
+				vlo = v
+				newFlags = newFlags | 0x08 #value is a raw int
+			else:
+				vlo = self._write_label(v)
 
 			self.handle.seek(binFiOffset)
-			binData = self.binStruct.pack(1, keyHash, klo, vlo)
+			binData = self.binStruct.pack(newFlags, keyHash, klo, vlo)
 			self.handle.write(binData)
 			self.handle.flush()
 
@@ -196,15 +221,32 @@ class HashTableFile(object):
 		else:
 			#Check if item already exists
 			if keyHash == existingHash:
-				oldKey = self._get_label(existingKey)
+				if existingRawKey:
+					oldKey = existingKey
+				else:
+					oldKey = self._get_label(existingKey)
+
 				if oldKey == k:
-					oldValue = self._get_label(existingVal)
+
+					if existingRawValue:
+						oldValue = existingVal
+					else:
+						oldValue = self._get_label(existingVal)
+
 					if oldValue != v:
-						vlo = self._write_label(v)
-						self._mark_label_unused(existingVal)
+						newFlags = 0x01 #In use
+
+						if isinstance(k, int):
+							vlo = v
+							newFlags = newFlags | 0x08 #value is a raw int
+						else:
+							vlo = self._write_label(v)
+
+						if not existingRawValue:
+							self._mark_label_unused(existingVal)
 
 						self.handle.seek(binFiOffset)
-						binData = self.binStruct.pack(1, keyHash, existingKey, vlo)
+						binData = self.binStruct.pack(newFlags, keyHash, existingKey, vlo)
 						self.handle.write(binData)
 						self.handle.flush()
 						if self.verbose >= 2: print "value updated"
@@ -300,14 +342,18 @@ class HashTableFile(object):
 			self.handle.seek(binFiOffset)
 			tmp = self.handle.read(self.binStruct.size)
 			flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
+			existingRawKey = flags & 0x04
+			existingRawValue = flags & 0x08
 
 			flags = flags | 0x02
 			self.handle.seek(binFiOffset)
 			newBinVals = self.binStruct.pack(flags, 0, 0, 0)
 			self.handle.write(newBinVals)
 
-			self._mark_label_unused(existingKey)
-			self._mark_label_unused(existingVal)
+			if not existingRawKey:
+				self._mark_label_unused(existingKey)
+			if not existingRawValue:
+				self._mark_label_unused(existingVal)
 			self.numItems -= 1
 				
 			return
@@ -394,8 +440,8 @@ if __name__ == "__main__":
 	table.verbose = 1
 	
 	test = dict()
-	table.allocate_size(100000)
-	for i in range(100000):
+	table.allocate_size(5)
+	for i in range(5):
 		test[RandomObj()] = RandomObj()
 
 	for i, k in enumerate(test):
