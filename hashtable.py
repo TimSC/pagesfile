@@ -19,12 +19,38 @@ class HashTableFile(object):
 			self.hashMaskSize = 3
 			self.hashMask = pow(2, self.hashMaskSize)
 			self._init_storage()
-
 		else:
 			self._read_storage_params()
 
 	def __del__(self):
 		self.flush()
+
+	def clear(self):
+		#Clear hash table
+		for binNum in range(self.hashMask):
+			binFiOffset = binNum * self.binStruct.size + self.headerReservedSpace
+			self.handle.seek(binFiOffset)
+			binData = self.binStruct.pack(0x00, 0, 0, 0)
+			self.handle.write(binData)
+			self.handle.flush()
+
+		self.numItems = 0
+		self.binsInUse = 0
+
+		#Clear labels
+		labelDataStart = self.hashMask * self.binStruct.size + self.headerReservedSpace + self.labelReservedSpace
+		cursor = labelDataStart		
+		while True:
+			self.handle.seek(cursor)
+			labelHeader = self.handle.read(5)
+			if len(labelHeader) < 5: break
+			labelType, labelLen = struct.unpack(">BI", labelHeader)
+
+			#Set to unused
+			if labelType != 0x00:
+				self._mark_label_unused(cursor)
+			
+			cursor += 9 + labelLen
 
 	def flush(self):
 		self.handle.seek(4)
@@ -116,7 +142,6 @@ class HashTableFile(object):
 
 		if ret == -1 and len(trashHashes) > 0:
 			#Use trash location for data
-			print "YAY"
 			done = self._attempt_to_write_bin(trashHashes[0], k, v)
 
 		if ret == -1 and len(trashHashes) == 0:
@@ -211,7 +236,6 @@ class HashTableFile(object):
 			self.handle.seek(binFiOffset)
 			binData = self.binStruct.pack(newFlags, keyHash, klo, vlo)
 			self.handle.write(binData)
-			self.handle.flush()
 
 			self.numItems += 1
 			self.binsInUse += 1
@@ -478,5 +502,8 @@ if __name__ == "__main__":
 
 		print "Num items", len(table), "expected", len(test)
 
+	table.clear()
+	print "Clear again"
+	table.clear()
 	#table.allocate_mask_size(10)
 
