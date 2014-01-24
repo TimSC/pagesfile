@@ -72,9 +72,9 @@ class HashTableFile(object):
 			inTrash = flags & 0x02			
 
 			if ret == 1:
-				return 1, key, val, trashHashes
+				return 1, key, val, trashHashes, keyHash
 			if ret == -1:
-				return -1, key, None, trashHashes
+				return -1, None, None, trashHashes, keyHash
 			if ret == 0 and inTrash:
 				trashHashes.append(keyHash)
 
@@ -83,10 +83,10 @@ class HashTableFile(object):
 
 			if keyHash == primaryKeyHash:
 				#Searched entire table, still not found
-				return -2, None, None, trashHashes
+				return -2, None, None, trashHashes, None
 
 	def __getitem__(self, k):
-		ret, key, val, trashHashes = self._probe_bins(k)
+		ret, key, val, trashHashes, actualBin = self._probe_bins(k)
 		if ret == 1:
 			return val
 		raise IndexError("Key not found")
@@ -280,37 +280,27 @@ class HashTableFile(object):
 		raise Exception("Unsupported data type: "+str(labelType))
 
 	def __delitem__(self, k):
-		primaryKeyHash = self._hash_label(k) % self.hashMask
-		keyHash = primaryKeyHash
-		found = 0
-		while not found:
-			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
-			if ret == 1:
-				#Found bin, now set trash flag
-				binFiOffset = keyHash * self.binStruct.size + self.headerReservedSpace
-				self.handle.seek(binFiOffset)
-				tmp = self.handle.read(self.binStruct.size)
-				flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
 
-				flags = flags | 0x02
-				self.handle.seek(binFiOffset)
-				newBinVals = self.binStruct.pack(flags, 0, 0, 0)
-				self.handle.write(newBinVals)
+		ret, key, val, trashHashes, actualBin = self._probe_bins(k)
 
-				self._mark_label_unused(existingKey)
-				self._mark_label_unused(existingVal)
-				self.numItems -= 1
+		if ret == 1:
+			#Found bin, now set trash flag
+			binFiOffset = actualBin * self.binStruct.size + self.headerReservedSpace
+			self.handle.seek(binFiOffset)
+			tmp = self.handle.read(self.binStruct.size)
+			flags, existingHash, existingKey, existingVal = self.binStruct.unpack(tmp)
+
+			flags = flags | 0x02
+			self.handle.seek(binFiOffset)
+			newBinVals = self.binStruct.pack(flags, 0, 0, 0)
+			self.handle.write(newBinVals)
+
+			self._mark_label_unused(existingKey)
+			self._mark_label_unused(existingVal)
+			self.numItems -= 1
 				
-				return
-				
-			if ret == -1:
-				raise Exception("Not key found")
+			return
 
-			keyHash += 1
-			keyHash = keyHash % self.hashMask	
-
-			if keyHash == primaryKeyHash:
-				raise Exception("Not key found")
 
 	def __iter__(self):
 		return HashTableFileIter(self)
