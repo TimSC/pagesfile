@@ -1,5 +1,5 @@
 
-import struct, json, os, random, string, hashlib
+import struct, json, os, random, string, hashlib, math
 
 class HashTableFile(object):
 	def __init__(self, fi):
@@ -323,6 +323,9 @@ class HashTableFile(object):
 	def allocate_mask_size(self, maskBits):
 		if self.verbose: print "allocate_mask_size", maskBits
 
+		if maskBits > 64:
+			raise Exception("Maximum hash length is 64 bits")
+	
 		#Copy table to temp file
 		self.flush()
 		self.handle.close()
@@ -349,6 +352,10 @@ class HashTableFile(object):
 			os.unlink(tmpFilename)
 		except:
 			pass
+
+	def allocate_size(self, dataSize):
+		requiredBits = int(math.ceil(math.log(dataSize * 3. / 2., 2)))
+		self.allocate_mask_size(requiredBits)
 
 class HashTableFileIter(object):
 	def __init__(self, parent):
@@ -387,6 +394,7 @@ if __name__ == "__main__":
 	table.verbose = 1
 	
 	test = dict()
+	table.allocate_size(100000)
 	for i in range(100000):
 		test[RandomObj()] = RandomObj()
 
