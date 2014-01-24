@@ -78,8 +78,7 @@ class HashTableFile(object):
 			if ret == 0 and inTrash:
 				trashHashes.append(keyHash)
 
-			keyHash += 1
-			keyHash = keyHash % self.hashMask	
+			keyHash = ((5*keyHash) + 1) % self.hashMask
 
 			if keyHash == primaryKeyHash:
 				#Searched entire table, still not found
