@@ -60,24 +60,36 @@ class HashTableFile(object):
 		self.hashMaskSize, self.numItems, self.binsInUse = self.hashHeaderStruct.unpack(header)
 		self.hashMask = pow(2, self.hashMaskSize)
 
-	def __getitem__(self, k):
-		#print "getitem", k, type(k)
+	def _probe_bins(self, k):
 		primaryKeyHash = self._hash_label(k) % self.hashMask
 		keyHash = primaryKeyHash
 		found = 0
+		trashHashes = []
 		#print "primary key", primaryKeyHash
 		while not found:
-			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			inUse = flags & 0x01
+			inTrash = flags & 0x02			
+
 			if ret == 1:
-				return val
+				return 1, key, val, trashHashes
 			if ret == -1:
-				raise IndexError("Key not found")
+				return -1, key, None, trashHashes
+			if ret == 0 and inTrash:
+				trashHashes.append(keyHash)
 
 			keyHash += 1
 			keyHash = keyHash % self.hashMask	
 
 			if keyHash == primaryKeyHash:
-				raise IndexError("Key not found (2)")
+				#Searched entire table, still not found
+				return -2, None, None, trashHashes
+
+	def __getitem__(self, k):
+		ret, key, val, trashHashes = self._probe_bins(k)
+		if ret == 1:
+			return val
+		raise IndexError("Key not found")
 
 	def __len__(self):
 		return self.numItems
@@ -121,20 +133,20 @@ class HashTableFile(object):
 		#if inUse: print keyHash, "binkey", self._get_label(existingKey)
 
 		if not inUse:
-			return -1, None, None #Empty bin
+			return -1, flags, None, None #Empty bin
 
 		if inTrash:
-			return 0, None, None #Trashed bin
+			return 0, flags, None, None #Trashed bin
 
 		if not matchAny and existingHash != keyHash:
-			return 0, None, None #No match
+			return 0, flags, None, None #No match
 
 		oldKey = self._get_label(existingKey)
 		if not matchAny and oldKey != self._mash_label(k):
-			return 0, None, None #No match
+			return 0, flags, None, None #No match
 
 		#Match
-		return 1, oldKey, self._get_label(existingVal)
+		return 1, flags, oldKey, self._get_label(existingVal)
 
 	def _mash_label(self, label):
 		#Encoding a label can make subtle changes
@@ -272,7 +284,7 @@ class HashTableFile(object):
 		keyHash = primaryKeyHash
 		found = 0
 		while not found:
-			ret, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			if ret == 1:
 				#Found bin, now set trash flag
 				binFiOffset = keyHash * self.binStruct.size + self.headerReservedSpace
@@ -350,7 +362,7 @@ class HashTableFileIter(object):
 			if self.nextBinNum >= self.parent.hashMask:
 				raise StopIteration()
 
-			found, key, val = self.parent._attempt_to_read_bin(self.nextBinNum, None, True)
+			found, flags, key, val = self.parent._attempt_to_read_bin(self.nextBinNum, None, True)
 			self.nextBinNum += 1
 			if found == 1:
 				#print "Iterator pos", self.nextBinNum - 1
