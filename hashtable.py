@@ -11,7 +11,7 @@ class HashTableFile(object):
 			self.handle = open(fi, "r+b")
 
 		self.headerReservedSpace = 64
-		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, items
+		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, num items, num bins used
 		self.labelReservedSpace = 64
 		self.verbose = 0
 
@@ -190,7 +190,7 @@ class HashTableFile(object):
 
 			self.numItems += 1
 			self.binsInUse += 1
-			if self.verbose: print "data inserted"
+			if self.verbose >= 2: print "data inserted"
 			return 1
 
 		else:
@@ -207,10 +207,10 @@ class HashTableFile(object):
 						binData = self.binStruct.pack(1, keyHash, existingKey, vlo)
 						self.handle.write(binData)
 						self.handle.flush()
-						if self.verbose: print "value updated"
+						if self.verbose >= 2: print "value updated"
 						return 1
 					else:
-						if self.verbose: print "value unchanged"
+						if self.verbose >= 2: print "value unchanged"
 						return 1 #No change was made to value
 
 			#Key does not match expected value
@@ -384,42 +384,45 @@ if __name__ == "__main__":
 	except:
 		pass
 	table = HashTableFile("table.hash")
-	table.verbose = 0
+	table.verbose = 1
 	
 	test = dict()
-	for i in range(1000000):
+	for i in range(100000):
 		test[RandomObj()] = RandomObj()
 
-	for k in test:
-		print "Set", k, "=" , test[k]
+	for i, k in enumerate(test):
+		print i, "Set", k, "=" , test[k]
+		if len(table) != i:
+			print "Unexpected table size", len(table), i
 		table[k] = test[k]
 
 	for k in test:
 		print k, "is", table[k], ", expected", test[k]
 
-	print "Num items", len(table)
+	print "Num items", len(table), "expected", len(test)
 
-	#Delete random value
-	for i in range(5):
-		randKey = random.choice(test.keys())
-		print "Delete key", randKey
+	if 0:
+		#Delete random value
+		for i in range(5):
+			randKey = random.choice(test.keys())
+			print "Delete key", randKey
 
-		del test[randKey]
-		del table[randKey]
+			del test[randKey]
+			del table[randKey]
 
-		k = RandomObj()
-		v = RandomObj()
-		table[k] = v
-		test[k] = v
-		print "Set", k, "=" , test[k]
+			k = RandomObj()
+			v = RandomObj()
+			table[k] = v
+			test[k] = v
+			print "Set", k, "=" , test[k]
 		
-		print "Read back", k, "=", table[k]
+			print "Read back", k, "=", table[k]
 
-	for i, k in enumerate(table):
-		v = table[k]
-		print i, k, v
+		for i, k in enumerate(table):
+			v = table[k]
+			print i, k, v
 
-	print "Num items", len(table)
+		print "Num items", len(table), "expected", len(test)
 
-	table.allocate_mask_size(10)
+	#table.allocate_mask_size(10)
 
