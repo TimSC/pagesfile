@@ -350,3 +350,4 @@ if __name__ == "__main__":
 		print i, k
 
 	print "Num items", len(table)
+
