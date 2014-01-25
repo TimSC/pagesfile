@@ -16,6 +16,7 @@ class PagesFileLowLevel(object):
 		self.method = "bz2 "
 		self.virtualCursor = 0
 		self.pageStep = 1000000
+		self.useTrashThreshold = 0.9
 
 		#Index of on disk pages
 		self.pageIndex = {}
@@ -35,14 +36,14 @@ class PagesFileLowLevel(object):
 	def _init_file_structure(self):
 		self.handle.seek(0)
 		self.handle.write("pset")
-		self.handle.write(struct.pack(">Q", self.plainLen))
+		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
 	def __del__(self):
 		self.flush()
 		
 	def flush(self):
 		self.handle.seek(4)
-		self.handle.write(struct.pack(">Q", self.plainLen))
+		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
 	def write(self, data):
 		while len(data) > 0:
@@ -103,6 +104,7 @@ class PagesFileLowLevel(object):
 			raise Exception("File format not recognised")
 
 		self.plainLen = struct.unpack(">Q", self.handle.read(8))[0]
+		self.pageStep = struct.unpack(">Q", self.handle.read(8))[0]
 		self.pageIndex = {}
 		self.pageTrash = []
 		while True:
@@ -242,6 +244,8 @@ class PagesFileLowLevel(object):
 			for i, tpage in enumerate(self.pageTrash):
 				if tpage['allocSize'] < len(encodedData):
 					continue #Too small
+				if tpage['allocSize'] * self.useTrashThreshold > len(encodedData):
+					continue #Too too big
 				if bestSize is None or tpage['allocSize'] < bestSize:
 					bestSize = tpage['allocSize']
 					bestTPage = tpage
@@ -371,24 +375,7 @@ class PagesFile(object):
 		self.pagesPlain.append(bytearray("".join("\x00" for i in range(plainLen))))
 
 	def read(self, bytes):
-		pageNum = self._get_page_for_index(self.virtualCursor)
-
-		if pageNum is None:
-			raise Exception("Undefined location in file")
-
-		plain = self.pagesPlain[pageNum]
-		meta = self.pagesMeta[pageNum]
-		
-		localCursor = self.virtualCursor - meta['uncompPos']
-		bytesRemainInPage = meta['uncompSize'] - localCursor
-		if bytesRemainInPage < bytes:
-			bytes = bytesRemainInPage
-
-		bytesRemainInFile = self.plainLen - self.virtualCursor
-		if bytesRemainInFile < bytes:
-			bytes = bytesRemainInFile
-					
-		return plain[localCursor:localCursor+bytes]
+		pass
 
 	def tell(self):
 		return self.virtualCursor
