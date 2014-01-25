@@ -435,15 +435,35 @@ class PagesFile(object):
 			bytes = len(self.handle) - self.virtualCursor
 
 		while outBufferLen < bytes:
-			self.handle.seek(self.virtualCursor)
-			ret = self.handle.read(bytes - outBufferLen)
+			expectedPageStart = self.virtualCursor - (self.virtualCursor % self.handle.pageStep)
+
+			if expectedPageStart in self.pagesPlain:
+				#Read from cache
+				page = self.pagesPlain[expectedPageStart]
+				bytesStillNeeded = bytes - outBufferLen
+				localCursor = self.virtualCursor - expectedPageStart
+
+				bytesRemainInPage = len(page) - localCursor
+				if bytesStillNeeded > bytesRemainInPage:
+					bytesStillNeeded = bytesRemainInPage
+				
+				bytesRemainInFile = len(self.handle) - self.virtualCursor
+				if bytesStillNeeded > bytesRemainInFile:
+					bytesStillNeeded = bytesRemainInFile
+
+				ret = str(page[localCursor:localCursor+bytesStillNeeded])
+
+			else:
+				#Read from underlying file
+				self.handle.seek(self.virtualCursor)
+				ret = self.handle.read(bytes - outBufferLen)
+
+				for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
+					uncompPos = cm['uncompPos']
+					self.pagesPlain[uncompPos] = cp
+					self.pagesChanged[uncompPos] = False
+
 			self.virtualCursor += len(ret)
-
-			for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
-				uncompPos = cm['uncompPos']
-				self.pagesPlain[uncompPos] = cp
-				self.pagesChanged[uncompPos] = False
-
 			if len(ret) == 0:
 				break
 			else:
