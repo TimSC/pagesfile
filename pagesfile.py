@@ -177,9 +177,12 @@ class PagesFileLowLevel(object):
 
 		raise Exception("Not implemented")
 
-	def read(self, bytes):
+	def read(self, bytes=None):
 		self._pageCache = []
 		self._metaCache = []
+		if bytes is None:
+			bytes = self.pageStep
+
 		meta = self._get_page_for_index(self.virtualCursor)
 
 		if meta is None:
@@ -424,10 +427,12 @@ class PagesFile(object):
 		self.pagesChanged.append(True)
 		self.pagesPlain.append(bytearray("".join("\x00" for i in range(plainLen))))
 
-	def read(self, bytes):
+	def read(self, bytes=None):
 
 		outBuffer = []
 		outBufferLen = 0
+		if bytes == None:
+			bytes = len(self.handle) - self.virtualCursor
 
 		while outBufferLen < bytes:
 			self.handle.seek(self.virtualCursor)
@@ -500,7 +505,7 @@ if __name__ == "__main__":
 	pf.write("bar243y37y3")
 
 	pf.seek(9000000)
-	print len(str(pf.read(10)))
+	print len(str(pf.read()))
 	
 
 	pf.flush()
