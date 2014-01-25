@@ -192,7 +192,10 @@ class PagesFileLowLevel(object):
 
 		import bz2
 		encodedData = bz2.compress(plain)
-		
+
+		if meta['uncompPos'] not in self.pageIndex:
+			self.pageIndex[meta['uncompPos']] = meta
+
 		#Does this fit in original location
 		if meta['pagePos'] is not None and len(encodedData) <= meta['compSize']:
 			pass
@@ -267,7 +270,7 @@ class PagesFileLowLevel(object):
 		self.handle.seek(meta['pagePos'] + 8 + self.headerStruct.size + meta['allocSize'])
 		footer = self.footerStruct.pack(meta['allocSize'])
 		self.handle.write(footer)
-		self.handle.write("pend")	
+		self.handle.write("pend")
 
 class PagesFile(object):
 
@@ -388,6 +391,13 @@ if __name__ == "__main__":
 
 	pf.seek(2500000)
 	pf.write("bar")
+
+	pf.seek(10000000)
+	pf.write("bar2")
+
+	pf.seek(9000000)
+	print "'"+str(pf.read(10))+"'"
+	
 
 	pf.flush()
 	print "len", len(pf)
