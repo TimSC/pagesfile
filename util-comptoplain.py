@@ -9,11 +9,13 @@ if __name__ == "__main__":
 		print "Specify output file as argument"
 		exit(1)
 
-	infiRaw = open(sys.argv[1], "rb")
-	infi = compressedfile.CompressedFile(infiRaw)
-	outfi = open(sys.argv[2], "wb")
+	infi = compressedfile.CompressedFile(sys.argv[1])
+	outfi = open(sys.argv[2], "w+b")
 
-	print len(infi)
+	try:
+		os.unlink(sys.argv[2])
+	except:
+		pass
 
 	while True:
 		data = infi.read(100000)

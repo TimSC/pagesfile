@@ -369,11 +369,6 @@ class CompressedFile(object):
 	"""
 
 	def __init__(self, handle):
-
-		if isinstance(handle, CompressedFileLowLevel):
-			self.handle = handle
-		else:
-			self.handle = CompressedFileLowLevel(handle)
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
@@ -383,10 +378,19 @@ class CompressedFile(object):
 		self.pagesChanged = {}
 		self.pagesLastUsed = {}
 
+		self.handle = None
+		if isinstance(handle, CompressedFileLowLevel):
+			self.handle = handle
+		else:
+			self.handle = CompressedFileLowLevel(handle)
+
 	def __del__(self):
 		self.flush()
 		
 	def flush(self):
+		if self.handle is None:
+			return
+
 		for i, uncompPos in enumerate(self.pagesChanged):
 			changed = self.pagesChanged[uncompPos]
 			if not changed:

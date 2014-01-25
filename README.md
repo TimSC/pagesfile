@@ -2,6 +2,7 @@ pycontainers
 ============
 
 compressedfile.py - A random access compressed file
+
 hashtable.py - A file based hash table
 
 Copyright (c) 2014, Tim Sheerman-Chase
