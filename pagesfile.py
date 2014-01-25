@@ -159,7 +159,27 @@ class PagesFileLowLevel(object):
 	def read(self, bytes):
 		meta = self._get_page_for_index(self.virtualCursor)
 		if meta is None:
-			return ""
+
+			if self.virtualCursor < 0 or self.virtualCursor >= self.plainLen:
+				return ""
+
+			#Handle if we are reading within a file but no page available
+			#Look for start of next real page
+			nextPageStartPos = self.virtualCursor - (self.virtualCursor % self.pageStep) + self.pageStep
+			while nextPageStartPos not in self.pageIndex and nextPageStartPos < bytes + self.virtualCursor:
+				nextPageStartPos += self.pageStep
+
+			bytesBeforePage = nextPageStartPos - self.virtualCursor
+			#print "bytesBeforePage", bytesBeforePage
+			if bytesBeforePage < bytes:
+				bytes = bytesBeforePage
+
+			bytesRemainingInFile = self.plainLen - self.virtualCursor 
+			if bytes > bytesRemainingInFile:
+				bytes = bytesRemainingInFile	
+
+			return "".join("\x00" for i in range(bytes))
+
 		plain = self._read_entire_page(meta)
 		
 		pageCursor = self.virtualCursor - meta['uncompPos']
@@ -167,7 +187,7 @@ class PagesFileLowLevel(object):
 		if bytes > bytesRemainingInPage:
 			bytes = bytesRemainingInPage
 
-		bytesRemainingInFile = self.plainLen
+		bytesRemainingInFile = self.plainLen - self.virtualCursor 
 		if bytes > bytesRemainingInFile:
 			bytes = bytesRemainingInFile		
 
@@ -396,7 +416,7 @@ if __name__ == "__main__":
 	pf.write("bar2")
 
 	pf.seek(9000000)
-	print "'"+str(pf.read(10))+"'"
+	print len(str(pf.read(10)))
 	
 
 	pf.flush()
