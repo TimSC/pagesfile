@@ -537,6 +537,10 @@ def IntegrityTest():
 		fi.seek(ind)
 		fi.write("bar243y37y3")
 
+		pf.seek(0,2)
+		fi.seek(0,2)
+		print pf.tell(), fi.tell()
+
 	fi.close()
 
 	fi = open("test.file", "rb")
