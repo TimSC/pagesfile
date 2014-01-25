@@ -50,7 +50,7 @@ class PagesFileLowLevel(object):
 		self.handle.seek(4)
 		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
-	def write(self, data):
+	def write(self, data, disableLengthUpdate = 0):
 
 		self._pageCache = []
 		self._metaCache = []
@@ -58,6 +58,7 @@ class PagesFileLowLevel(object):
 		while len(data) > 0:
 			meta = self._get_page_for_index(self.virtualCursor)
 			if meta is None:
+				#Create a fresh page to contain data
 				meta = {}
 				meta['pagePos'] = None
 				meta['compSize'] = None
@@ -79,7 +80,7 @@ class PagesFileLowLevel(object):
 				
 				self._write_page_to_disk(meta, plain)
 
-				if self.virtualCursor > self.plainLen:
+				if self.virtualCursor > self.plainLen and not disableLengthUpdate:
 					self.plainLen = self.virtualCursor 
 				continue
 
@@ -106,7 +107,7 @@ class PagesFileLowLevel(object):
 
 			self._pageCache.append(plain)
 			self._metaCache.append(meta)
-			if self.virtualCursor > self.plainLen:
+			if self.virtualCursor > self.plainLen and not disableLengthUpdate:
 				self.plainLen = self.virtualCursor 
 
 	def _refresh_page_index(self):
@@ -347,6 +348,8 @@ class PagesFileLowLevel(object):
 		self.handle.write(footer)
 		self.handle.write("pend")
 
+# ****************************************************************************
+
 class PagesFile(object):
 
 	def __init__(self, handle):
@@ -375,7 +378,7 @@ class PagesFile(object):
 	
 			page = self.pagesPlain[uncompPos]
 			self.handle.seek(uncompPos)
-			self.handle.write(page)
+			self.handle.write(page, disableLengthUpdate = 1)
 			self.pagesChanged[uncompPos] = False
 
 	def _flush_old_pages(self, minToRemove=1):
@@ -391,7 +394,7 @@ class PagesFile(object):
 			#Write update page to disk
 			if self.pagesChanged[ind]:
 				self.handle.seek(ind)
-				self.handle.write(self.pagesPlain[ind])
+				self.handle.write(self.pagesPlain[ind], disableLengthUpdate = 1)
 
 			del self.pagesPlain[ind]
 			del self.pagesChanged[ind]
@@ -418,6 +421,9 @@ class PagesFile(object):
 				self.virtualCursor += fragmentLen
 				self.pagesChanged[expectedPageStart] = True
 				self.pagesLastUsed[expectedPageStart] = time.time()
+
+				if self.virtualCursor > self.handle.plainLen:
+					self.handle.plainLen = self.virtualCursor
 
 			else:
 				#Write directly to file
@@ -509,9 +515,9 @@ class PagesFile(object):
 			return
 
 		if mode == 2:
-			if self.plainLen + pos < 0:
+			if self.handle.plainLen + pos < 0:
 				raise IOError("Invalid argument")
-			self.virtualCursor = self.plainLen + pos
+			self.virtualCursor = self.handle.plainLen + pos
 			return
 
 	def __len__(self):
@@ -539,7 +545,9 @@ def IntegrityTest():
 
 		pf.seek(0,2)
 		fi.seek(0,2)
-		print pf.tell(), fi.tell()
+		if pf.tell() != fi.tell():
+			print "Length error detected", pf.tell(), fi.tell()
+			return 0
 
 	fi.close()
 
