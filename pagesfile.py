@@ -1,73 +1,110 @@
-import bz2, struct
+import bz2, struct, os
 
 class PagesFile(object):
-	def __init__(self, fi, mode = "r"):
+	def __init__(self, fi):
+		createFile = False
 		if isinstance(fi, str):
-			self.handle = open(fi, mode+"b")
+			createFile = not os.path.isfile(fi)
+			if createFile:
+				self.handle = open(fi, "w+b")
+				createFile = True
+			else:
+				self.handle = open(fi, "r+b")
 		else:
 			self.handle = fi
-		self.mode = mode
-		self.maxPlainSize = 1000000
-		self.buffer = []
-		self.bufferLen = 0
+
 		self.method = "bz2"
-		self.writtenPlainBytes = 0
 		self.virtualCursor = 0
-		self.cursorPagePlain = None
-		self.pageIndex = None
-		self.cursorPageMeta = None
-		self.plainLen = None
+
+		self.pageIndex = [] #Index of on disk pages
+
+		#Index of in memory pages
+		self.pagesPlain = []
+		self.pagesMeta = []
+		self.pagesChanged = []
+
 		self.headerStruct = struct.Struct(">QQQ")
 		self.footerStruct = struct.Struct(">Q")
 		
-		if self.mode == "w":
-			self.handle.write("pset")
+		self.plainLen = 0
+		self.pageAllocLen = 0
+
+		if createFile:
+			self._init_file_structure()
+		else:
+			self._refresh_page_index()
+
+	def _init_file_structure(self):
+		self.handle.seek(0)
+		self.handle.write("pset")
+		self.handle.write(struct.pack(">Q", self.plainLen))
 
 	def __del__(self):
-
-		if self.mode == "w":
-			self.flush()
-			self.handle.write("fini")
-			self.handle.flush()
-
+		self.flush()
+		
 	def flush(self):
-		if self.buffer is not None:
-			self._write_page("".join(self.buffer))
-		self.buffer = []
-		self.bufferLen = 0
+		self.handle.seek(4)
+		self.handle.write(struct.pack(">Q", self.plainLen))
+
+		for plain, meta, changed in zip(self.pagesPlain, self.pagesMeta, self.pagesChanged):
+			if not changed:
+				continue
+			
 
 	def write(self, data):
 		#http://www.skymind.com/~ocrow/python_string/
 
-		if self.mode != "w":
-			raise Exception("Wrong file mode, cannot write")
+		while len(data)>0:
 
-		self.buffer.append(data)
+			pageNum = self._get_page_for_index(self.virtualCursor)
+			print len(data), pageNum
+		
+			if pageNum is None:
+				pageStep = 1000000
+				pageStart = self.virtualCursor - (self.virtualCursor % pageStep)
+				self._add_page(pageStart, pageStep)
+				continue
+			
+			meta = self.pagesMeta[pageNum]
+			plainPage = self.pagesPlain[pageNum]
+			self.pagesChanged[pageNum] = True
+			localIndex = self.virtualCursor - meta['uncompPos']
+			spaceOnPage = meta['uncompSize'] - localIndex
+			dataToWriteThisPage = len(data)
+			if dataToWriteThisPage > spaceOnPage:
+				dataToWriteThisPage = spaceOnPage
 
-		self.virtualCursor += len(data)
-		self.bufferLen += len(data)
+			plainPage[localIndex:localIndex+dataToWriteThisPage] = data[:dataToWriteThisPage]
+			data = data[dataToWriteThisPage:]
+			self.virtualCursor += dataToWriteThisPage
 
-		if self.bufferLen >= self.maxPlainSize:
-			concatBuff = "".join(self.buffer)
-			page = concatBuff[:self.maxPlainSize]
-			self.buffer = [concatBuff[self.maxPlainSize:]]
-			self.bufferLen = len(self.buffer[0])
-			self._write_page(page)
+			#Update end point of file
+			if self.virtualCursor > self.plainLen:
+				self.plainLen = self.virtualCursor 
+
+	def _add_page(self, pos, plainLen):
+		self.pagesMeta.append({'pagePos': None, 'compSize': None, 'uncompPos': pos,
+			 'uncompSize': plainLen, 'method': self.method})
+		self.pagesChanged.append(True)
+		self.pagesPlain.append(bytearray("".join("\x00" for i in range(plainLen))))
 
 	def _refresh_page_index(self):
 		self.handle.seek(0)
 		if self.handle.read(4) != "pset":
 			raise Exception("File format not recognised")
 
+		self.plainLen = struct.unpack(">Q", self.handle.read(8))[0]
+		self.pageAllocLen = 0
+
 		self.pageIndex = []
-		while True:			
+		while True:
 			meta = self._parse_header_at_cursor()
 			if meta is None:
 				break
 			print meta
 			self.pageIndex.append(meta)
 			pos = self.handle.tell()
-			self.handle.seek(pos + meta[1])
+			self.handle.seek(pos + meta['compSize'])
 			footerData = self.handle.read(8)
 			endStr = self.handle.read(4)
 			if endStr != "pend":
@@ -76,7 +113,7 @@ class PagesFile(object):
 	def _parse_header_at_cursor(self):
 		pagePos = self.handle.tell()
 		startStr = self.handle.read(4)
-		if startStr == "fini":
+		if len(startStr) == 0:
 			return None
 		if startStr != "page":
 			raise Exception("File format not recognised")
@@ -84,51 +121,44 @@ class PagesFile(object):
 		header = self.handle.read(self.headerStruct.size)
 		uncompSize, compSize, uncompPos = self.headerStruct.unpack(header)
 		method = self.handle.read(4)
-		return pagePos, compSize, uncompPos, uncompSize, method
+		return {'pagePos': pagePos, 'compSize': compSize, 'uncompPos': uncompPos,
+			 'uncompSize': uncompSize, 'method': method}
+
+	def _get_page_for_index(self, pos):
+
+		#Check for suitable page already in memory
+		for i, page in enumerate(self.pagesMeta):
+			if pos >= page['uncompPos'] and pos < page['uncompPos'] + page['uncompSize']:
+				return i
+
+		#Seek for suitable page on disk
+		for i, page in enumerate(self.pageIndex):
+			if pos >= page['uncompPos'] and pos < page['uncompPos'] + page['uncompSize']:
+				return self._load_page_into_mem(page)
+
+		return None
+
+	def _load_page_into_mem(self, meta):
+		self.handle.seek(meta['pagePos'] + self.headerStruct.size + 8)
+		binData = self.handle.read(meta['compSize'])
+
+		if meta['method'] == "bz2 ":
+			plainData = bytearray(bz2.decompress(binData))
+			if len(self.cursorPagePlain) != meta['uncompSize']:
+				raise Exception("Extracted data has incorrect length")
+
+			self.pagesPlain.append(plainData)
+			self.pagesMeta.append(meta)
+			self.pagesChanged.append(False)
+
+			return len(self.pagesPlain)-1
+		else:
+			raise Exception("Not implemented")
 
 	def read(self, bytes):
-		if self.mode != "r":
-			raise Exception("Wrong file mode, cannot read")
+		pass
 
-		if self.pageIndex is None:
-			self._refresh_page_index()
-
-		#Check if current page is suitable
-		if self.cursorPageMeta is not None and \
-			self.virtualCursor >= self.cursorPageMeta[2] and \
-			self.virtualCursor < self.cursorPageMeta[2] + self.cursorPageMeta[3]:
-
-			localCursor = self.virtualCursor - self.cursorPageMeta[2]
-			retStr = self.cursorPagePlain[localCursor: localCursor+bytes]
-			self.virtualCursor += len(retStr)
-			return retStr
-
-
-		#Seek for suitable page
-		self.cursorPageMeta = None
-		self.cursorPagePlain = None
-		for page in self.pageIndex:
-			if self.virtualCursor >= page[2] and self.virtualCursor < page[2] + page[3]:
-				self.cursorPageMeta = page
-				self.cursorPagePlain = None
-
-		if self.cursorPageMeta is None:
-			return ""
-
-		self.handle.seek(self.cursorPageMeta[0] + self.headerStruct.size + 8)
-		binData = self.handle.read(self.cursorPageMeta[1])
-
-		if self.cursorPageMeta[4] == "bz2 ":
-
-			self.cursorPagePlain = bz2.decompress(binData)
-			if len(self.cursorPagePlain) != self.cursorPageMeta[3]:
-				raise Exception("Extracted data has incorrect length")
-			localCursor = self.virtualCursor - self.cursorPageMeta[2]
-			retStr = self.cursorPagePlain[localCursor: localCursor+bytes]
-			self.virtualCursor += len(retStr)
-			return retStr
 			
-		raise Exception("Not implemented compression:" + self.cursorPageMeta[4])
 
 	def tell(self):
 		return self.virtualCursor
@@ -139,45 +169,15 @@ class PagesFile(object):
 
 		self.virtualCursor = pos
 
-	def _get_uncompressed_length(self):
-
-		#Handle empty pages file
-		self.handle.seek(0, 2)
-		binaryLen = self.handle.tell()
-		if binaryLen == 8:
-			return 0
-
-		#Find start of last page
-		footerSize = 8 + self.footerStruct.size
-		self.handle.seek(-footerSize, 2)
-		endData = self.handle.read(footerSize)
-		if endData[-4:] != "fini":
-			raise Exception("File format not recognised")
-		if endData[-8:-4] != "pend":
-			raise Exception("File format not recognised")
-
-		compressedDataLen = self.footerStruct.unpack(endData[:self.footerStruct.size])[0]
-
-		#Send to start of last page
-		self.handle.seek(-footerSize - compressedDataLen - self.headerStruct.size - 8, 2)
-		lastPageMeta = self._parse_header_at_cursor()
-		self.plainLen = lastPageMeta[2] + lastPageMeta[3]
-
 	def __len__(self):
-		if self.mode == "w":
-			return self.writtenPlainBytes
-
-		if self.plainLen is None:
-			self._get_uncompressed_length()
-
 		return self.plainLen
 
-	def _write_page(self, data):
+	def _write_page(self, i):
 		if self.method == "bz2":
 			return self._write_page_bz2(data)
 		raise Exception("Not implemented compression:" + self.method)
 
-	def _write_page_bz2(self, data):
+	def _write_page_bz2(self, i):
 		import bz2
 		compressedData = bz2.compress(data)
 		print "Write page", len(data), ", compressed size", len(compressedData)
@@ -196,4 +196,12 @@ class PagesFile(object):
 		footer = self.footerStruct.pack(len(compressedData))
 		self.handle.write(footer)
 		self.handle.write("pend")
+
+if __name__ == "__main__":
+
+	pf = PagesFile("test.pages")	
+	pf.write("stuff")
+	pf.write("more")
+	pf.flush()
+	print "len", len(pf)
 
