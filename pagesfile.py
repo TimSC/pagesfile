@@ -1,4 +1,4 @@
-import bz2, struct, os, copy, gzip
+import bz2, struct, os, copy, gzip, time, random
 
 class PagesFileLowLevel(object):
 	def __init__(self, fi):
@@ -357,11 +357,12 @@ class PagesFile(object):
 			self.handle = PagesFileLowLevel(handle)
 		
 		self.virtualCursor = 0
-		self.maxCachePages = 100
+		self.maxCachePages = 50
 
 		#Index of in memory pages
 		self.pagesPlain = {}
 		self.pagesChanged = {}
+		self.pagesLastUsed = {}
 
 	def __del__(self):
 		self.flush()
@@ -376,6 +377,25 @@ class PagesFile(object):
 			self.handle.seek(uncompPos)
 			self.handle.write(page)
 			self.pagesChanged[uncompPos] = False
+
+	def _flush_old_pages(self, minToRemove=1):
+
+		sortableList = zip(self.pagesLastUsed.values(), self.pagesLastUsed.keys())
+		sortableList.sort()
+		cutIndex = int(round(len(sortableList) * 0.1))
+		if cutIndex < minToRemove:
+			cutIndex = minToRemove
+		toRemove = sortableList[:cutIndex]
+
+		for lastUsed, ind in toRemove:
+			#Write update page to disk
+			if self.pagesChanged[ind]:
+				self.handle.seek(ind)
+				self.handle.write(self.pagesPlain[ind])
+
+			del self.pagesPlain[ind]
+			del self.pagesChanged[ind]
+			del self.pagesLastUsed[ind]
 
 	def write(self, data):
 
@@ -397,6 +417,7 @@ class PagesFile(object):
 				data = data[fragmentLen:]
 				self.virtualCursor += fragmentLen
 				self.pagesChanged[expectedPageStart] = True
+				self.pagesLastUsed[expectedPageStart] = time.time()
 
 			else:
 				#Write directly to file
@@ -408,10 +429,16 @@ class PagesFile(object):
 				self.virtualCursor += len(writeFragment)
 				self.handle.write(writeFragment)
 
+				#Get local copy of cached pages
 				for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
 					uncompPos = cm['uncompPos']
-					self.pagesPlain[uncompPos] = cp
+					self.pagesPlain[uncompPos] = bytearray(cp)
 					self.pagesChanged[uncompPos] = False
+					self.pagesLastUsed[uncompPos] = time.time()
+
+				#Clear old cached pages if there are too many
+				if len(self.pagesPlain) > self.maxCachePages:
+					self._flush_old_pages()
 
 	def read(self, bytes=None):
 
@@ -444,10 +471,16 @@ class PagesFile(object):
 				self.handle.seek(self.virtualCursor)
 				ret = self.handle.read(bytes - outBufferLen)
 
+				#Get local copy of cached pages
 				for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
 					uncompPos = cm['uncompPos']
-					self.pagesPlain[uncompPos] = cp
+					self.pagesPlain[uncompPos] = bytearray(cp)
 					self.pagesChanged[uncompPos] = False
+					self.pagesLastUsed[uncompPos] = time.time()
+
+				#Clear old cached pages if there are too many
+				if len(self.pagesPlain) > self.maxCachePages:
+					self._flush_old_pages()
 
 			self.virtualCursor += len(ret)
 			if len(ret) == 0:
@@ -484,38 +517,81 @@ class PagesFile(object):
 	def __len__(self):
 		return len(self.handle)
 
+def IntegrityTest():
+	try:
+		os.unlink("test.pages")
+	except:
+		pass
+	try:
+		os.unlink("test.file")
+	except:
+		pass
+
+	pf = PagesFile("test.pages")
+	fi = open("test.file", "wb")
+	for i in range(1000):
+		ind = random.randint(0,100000000)
+		print "Writing", i, ind
+		pf.seek(ind)
+		pf.write("bar243y37y3")
+		fi.seek(ind)
+		fi.write("bar243y37y3")
+
+	fi.close()
+
+	fi = open("test.file", "rb")
+	pf.seek(0)
+	fi.seek(0)
+
+	while True:
+		si = random.randint(0,5000000)
+		test1 = pf.read(si)
+		test2 = fi.read(si)
+		if test1 != test2:
+			print "Match error", len(test1), len(test2)
+		else:
+			print "Match ok", len(test1), len(test2)
+		if len(test1) == 0:
+			break
+
 if __name__ == "__main__":
 
-	pf = PagesFile("test.pages")	
-	pf.write("stuffandmorestuffxx5u4u545ugexx")
-	pf.seek(0)
-	print "readback", pf.read(5)
+	pf = PagesFile("test.pages")
+	if 0:
+		pf.write("stuffandmorestuffxx5u4u545ugexx")
+		pf.seek(0)
+		print "readback", pf.read(5)
 
-	pf.seek(999990)
-	pf.write("thecatsatonthematthequickbrownfoxjumpedoverthelazybrowncow")
-	pf.seek(999990)
-	print "a", pf.read(20)
-	print "b", pf.read(20)
+		pf.seek(999990)
+		pf.write("thecatsatonthematthequickbrownfoxjumpedoverthelazybrowncow")
+		pf.seek(999990)
+		print "a", pf.read(20)
+		print "b", pf.read(20)
 
-	pf.seek(1500000)
-	pf.write("foo42t245u54u45u")
+		pf.seek(1500000)
+		pf.write("foo42t245u54u45u")
 
-	pf.seek(1500000)
-	test = pf.read(6)
-	print "'"+str(test)+"'"
+		pf.seek(1500000)
+		test = pf.read(6)
+		print "'"+str(test)+"'"
 
-	pf.seek(2500000)
-	pf.write("bar")
+		pf.seek(2500000)
+		pf.write("bar")
 
-	pf.seek(10000000)
-	pf.write("bar243y37y3")
+		pf.seek(10000000)
+		pf.write("bar243y37y3")
 
-	pf.seek(9000000)
-	print len(str(pf.read()))
+		pf.seek(9000000)
+		print len(str(pf.read()))
 	
+		pf._flush_old_pages()
+	
+		pf.flush()
+		print "len", len(pf)
 
-	pf.flush()
-	print "len", len(pf)
+		pf.handle._refresh_page_index()
 
-	pf.handle._refresh_page_index()
+	if 1:
+		IntegrityTest()
+		
 
