@@ -381,6 +381,8 @@ class PagesFile(object):
 			self.handle.write(page, disableLengthUpdate = 1)
 			self.pagesChanged[uncompPos] = False
 
+		self.handle.flush()
+
 	def _flush_old_pages(self, minToRemove=1):
 
 		sortableList = zip(self.pagesLastUsed.values(), self.pagesLastUsed.keys())
@@ -535,7 +537,7 @@ def IntegrityTest():
 
 	pf = PagesFile("test.pages")
 	fi = open("test.file", "wb")
-	for i in range(1000):
+	for i in range(10000):
 		ind = random.randint(0,100000000)
 		print "Writing", i, ind
 		pf.seek(ind)
@@ -550,7 +552,9 @@ def IntegrityTest():
 			return 0
 
 	fi.close()
-
+	if 1:
+		del pf
+		pf = PagesFile("test.pages")
 	fi = open("test.file", "rb")
 	pf.seek(0)
 	fi.seek(0)
