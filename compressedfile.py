@@ -1,6 +1,16 @@
 import bz2, struct, os, copy, gzip, time, random
 
-class PagesFileLowLevel(object):
+class CompressedFileLowLevel(object):
+
+	"""
+	This class emulates a file but compresses the content
+	Reading and writing may be mixed
+	Seeking is supported
+	Changes are immediately written to disk
+	Storage is sparse, so empty areas are not stored at all
+	Functionality is extended by CompressedFile
+	"""
+
 	def __init__(self, fi):
 		createFile = False
 		if isinstance(fi, str):
@@ -350,14 +360,20 @@ class PagesFileLowLevel(object):
 
 # ****************************************************************************
 
-class PagesFile(object):
+class CompressedFile(object):
+
+	"""
+	Extends the functionality of CompressedFileLowLevel
+	Provides memory caching of data for faster reads and writes
+	Writes are lazy and done before the memory page is removed
+	"""
 
 	def __init__(self, handle):
 
-		if isinstance(handle, PagesFileLowLevel):
+		if isinstance(handle, CompressedFileLowLevel):
 			self.handle = handle
 		else:
-			self.handle = PagesFileLowLevel(handle)
+			self.handle = CompressedFileLowLevel(handle)
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
@@ -526,6 +542,11 @@ class PagesFile(object):
 		return len(self.handle)
 
 def IntegrityTest():
+	"""
+	Do random writes to a compressed file and a normal file
+	The contents are then compared
+	"""
+
 	try:
 		os.unlink("test.pages")
 	except:
@@ -535,7 +556,7 @@ def IntegrityTest():
 	except:
 		pass
 
-	pf = PagesFile("test.pages")
+	pf = CompressedFile("test.pages")
 	fi = open("test.file", "wb")
 	for i in range(10000):
 		ind = random.randint(0,100000000)
@@ -554,7 +575,7 @@ def IntegrityTest():
 	fi.close()
 	if 1:
 		del pf
-		pf = PagesFile("test.pages")
+		pf = CompressedFile("test.pages")
 	fi = open("test.file", "rb")
 	pf.seek(0)
 	fi.seek(0)
@@ -572,8 +593,8 @@ def IntegrityTest():
 
 if __name__ == "__main__":
 
-	pf = PagesFile("test.pages")
 	if 0:
+		pf = CompressedFile("test.pages")
 		pf.write("stuffandmorestuffxx5u4u545ugexx")
 		pf.seek(0)
 		print "readback", pf.read(5)
