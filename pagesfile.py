@@ -357,6 +357,7 @@ class PagesFile(object):
 			self.handle = PagesFileLowLevel(handle)
 		
 		self.virtualCursor = 0
+		self.maxCachePages = 100
 
 		#Index of in memory pages
 		self.pagesPlain = {}
@@ -370,62 +371,47 @@ class PagesFile(object):
 			changed = self.pagesChanged[uncompPos]
 			if not changed:
 				continue
-			#self._write_page_to_disk(i)
+	
+			page = self.pagesPlain[uncompPos]
+			self.handle.seek(uncompPos)
+			self.handle.write(page)
+			self.pagesChanged[uncompPos] = False
 
 	def write(self, data):
 
-		self.handle.seek(self.virtualCursor)
-		self.virtualCursor += len(data)
-		self.handle.write(data)
+		while len(data) > 0:
+			expectedPageStart = self.virtualCursor - (self.virtualCursor % self.handle.pageStep)
+			expectedPageEnd = expectedPageStart + self.handle.pageStep
+			localCursor = self.virtualCursor - expectedPageStart
 
-		for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
-			uncompPos = cm['uncompPos']
-			self.pagesPlain[uncompPos] = cp
-			self.pagesChanged[uncompPos] = False
+			if expectedPageStart in self.pagesPlain:
 
-		return
+				#Write to cache
+				page = self.pagesPlain[expectedPageStart]		
+				bytesRemainInPage = len(page) - localCursor
+				fragmentLen = len(data)
+				if fragmentLen > bytesRemainInPage:
+					fragmentLen = bytesRemainInPage
 
-		while len(data)>0:
+				page[localCursor:localCursor+fragmentLen] = data[:fragmentLen]
+				data = data[fragmentLen:]
+				self.virtualCursor += fragmentLen
+				self.pagesChanged[expectedPageStart] = True
 
-			pageNum = self._get_page_for_index(self.virtualCursor)
-			print len(data), pageNum
-		
-			if pageNum is None:
-				pageStep = 1000000
-				pageStart = self.virtualCursor - (self.virtualCursor % pageStep)
-				self._add_page(pageStart, pageStep)
-				continue
-			
-			plainPage = self.pagesPlain[pageNum]
-			self.pagesChanged[pageNum] = True
-			localIndex = self.virtualCursor - meta['uncompPos']
-			spaceOnPage = meta['uncompSize'] - localIndex
-			dataToWriteThisPage = len(data)
-			if dataToWriteThisPage > spaceOnPage:
-				dataToWriteThisPage = spaceOnPage
+			else:
+				#Write directly to file
+				bytesRemainInPage = self.handle.pageStep - localCursor
+				writeFragment = data[:bytesRemainInPage]
+				data = data[bytesRemainInPage:]
 
-			plainPage[localIndex:localIndex+dataToWriteThisPage] = data[:dataToWriteThisPage]
-			data = data[dataToWriteThisPage:]
-			self.virtualCursor += dataToWriteThisPage
+				self.handle.seek(self.virtualCursor)
+				self.virtualCursor += len(writeFragment)
+				self.handle.write(writeFragment)
 
-			#Update end point of file
-			if self.virtualCursor > self.plainLen:
-				self.plainLen = self.virtualCursor 
-
-
-	def _get_page_for_index(self, pos):
-
-		#Check for suitable page already in memory
-		for i, page in enumerate(self.pagesMeta):
-			if pos >= page['uncompPos'] and pos < page['uncompPos'] + page['uncompSize']:
-				return i
-
-		return None
-
-	def _add_page(self, pos, plainLen):
-		self.pagesMeta.append({'pagePos': None})
-		self.pagesChanged.append(True)
-		self.pagesPlain.append(bytearray("".join("\x00" for i in range(plainLen))))
+				for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
+					uncompPos = cm['uncompPos']
+					self.pagesPlain[uncompPos] = cp
+					self.pagesChanged[uncompPos] = False
 
 	def read(self, bytes=None):
 
