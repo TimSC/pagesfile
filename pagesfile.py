@@ -109,7 +109,7 @@ class PagesFileLowLevel(object):
 			meta = self._parse_header_at_cursor()
 			if meta is None:
 				break
-			print "meta", meta
+			#print "meta", meta
 			if meta['inUse']:
 				self.pageIndex[meta['uncompPos']] = meta
 			else:
@@ -226,7 +226,7 @@ class PagesFileLowLevel(object):
 		#Does this fit in original location
 		if meta['pagePos'] is not None and len(encodedData) <= meta['compSize']:
 			pass
-			print "Write page at existing position"
+			#print "Write page at existing position"
 
 		else:
 			if meta['pagePos'] is not None:
@@ -248,13 +248,13 @@ class PagesFileLowLevel(object):
 					bestIndex = i
 
 			if bestTPage is not None:
-				print "Write existing page to larger area"
+				#print "Write existing page to larger area"
 				#Write to trash page
 				meta['pagePos'] = bestTPage['pagePos']
 				meta['allocSize'] = bestTPage['allocSize']
 				del self.pageTrash[bestIndex]
 			else:
-				print "Write existing page at end of file"
+				#print "Write existing page at end of file"
 				#Write at end of file
 				self.handle.seek(0, 2)
 				meta['pagePos'] = self.handle.tell()
@@ -269,7 +269,7 @@ class PagesFileLowLevel(object):
 	def _set_page_unused(self, meta):
 
 		self.handle.seek(meta['pagePos'])
-		print "Set page to unused"
+		#print "Set page to unused"
 
 		#Header
 		self.handle.write("page")
@@ -282,7 +282,7 @@ class PagesFileLowLevel(object):
 	def _write_page_bz2(self, meta, data, encoded):
 
 		self.handle.seek(meta['pagePos'])
-		print "Write page", meta['uncompPos'], ", compressed size", len(encoded)
+		#print "Write page", meta['uncompPos'], ", compressed size", len(encoded)
 
 		#Header
 		self.handle.write("page")
