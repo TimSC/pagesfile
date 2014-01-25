@@ -420,7 +420,7 @@ if __name__ == "__main__":
 	pf.write("bar")
 
 	pf.seek(10000000)
-	pf.write("bar2")
+	pf.write("bar243y37y3")
 
 	pf.seek(9000000)
 	print len(str(pf.read(10)))
