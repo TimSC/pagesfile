@@ -204,14 +204,20 @@ class PagesFileLowLevel(object):
 
 	def seek(self, pos, mode=0):
 		if mode == 0:
+			if pos < 0:
+				raise IOError("Invalid argument")
 			self.virtualCursor = pos
 			return
 
 		if mode == 1:
+			if self.virtualCursor + pos < 0:
+				raise IOError("Invalid argument")
 			self.virtualCursor += pos
 			return
 
 		if mode == 2:
+			if self.plainLen + pos < 0:
+				raise IOError("Invalid argument")
 			self.virtualCursor = self.plainLen + pos
 			return
 
