@@ -1,4 +1,4 @@
-import bz2, struct, os, copy
+import bz2, struct, os, copy, gzip
 
 class PagesFileLowLevel(object):
 	def __init__(self, fi):
@@ -13,7 +13,8 @@ class PagesFileLowLevel(object):
 		else:
 			self.handle = fi
 
-		self.method = "bz2 "
+		#self.method = "bz2 "
+		self.method = "zlib"
 		self.virtualCursor = 0
 		self.pageStep = 1000000
 		self.useTrashThreshold = 0.9
@@ -151,7 +152,15 @@ class PagesFileLowLevel(object):
 		binData = self.handle.read(meta['compSize'])
 
 		if meta['method'] == "bz2 ":
+			import bz2
 			plainData = bz2.decompress(binData)
+			if len(plainData) != meta['uncompSize']:
+				raise Exception("Extracted data has incorrect length")
+			return plainData
+
+		if meta['method'] == "zlib":
+			import zlib
+			plainData = zlib.decompress(binData)
 			if len(plainData) != meta['uncompSize']:
 				raise Exception("Extracted data has incorrect length")
 			return plainData
@@ -226,11 +235,19 @@ class PagesFileLowLevel(object):
 
 	def _write_page_to_disk(self, meta, plain):
 
-		if meta['method'] != "bz2 ":
+		encodedData = None
+
+		if meta['method'] == "bz2 ":
+			import bz2
+			encodedData = bz2.compress(plain)
+
+		if meta['method'] == "zlib":
+			import zlib
+			encodedData = zlib.compress(str(plain))
+
+		if encodedData == None:
 			raise Exception("Not implemented compression:" + meta['method'])
 
-		import bz2
-		encodedData = bz2.compress(plain)
 
 		if meta['uncompPos'] not in self.pageIndex:
 			self.pageIndex[meta['uncompPos']] = meta
@@ -277,8 +294,7 @@ class PagesFileLowLevel(object):
 		meta['compSize'] = len(encodedData)
 
 		#Write to disk
-		if meta['method'] == "bz2 ":
-			self._write_page_bz2(meta, plain, encodedData)
+		self._write_data_page(meta, plain, encodedData)
 
 	def _set_page_unused(self, meta):
 
@@ -293,7 +309,7 @@ class PagesFileLowLevel(object):
 
 		#Leave footer unchanged
 
-	def _write_page_bz2(self, meta, data, encoded):
+	def _write_data_page(self, meta, data, encoded):
 
 		self.handle.seek(meta['pagePos'])
 		#print "Write page", meta['uncompPos'], ", compressed size", len(encoded)
@@ -302,7 +318,7 @@ class PagesFileLowLevel(object):
 		self.handle.write("page")
 		header = self.headerStruct.pack(0x01, meta['uncompSize'], meta['compSize'], meta['uncompPos'], meta['allocSize'])
 		self.handle.write(header)
-		self.handle.write("bz2 ")
+		self.handle.write(meta['method'])
 
 		#Copy data
 		self.handle.write(encoded)
