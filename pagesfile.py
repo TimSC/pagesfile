@@ -180,8 +180,10 @@ class PagesFileLowLevel(object):
 			if bytes > bytesRemainingInFile:
 				bytes = bytesRemainingInFile	
 
+			self.virtualCursor += bytes
 			return "".join("\x00" for i in range(bytes))
 
+		#Read a page from disk
 		plain = self._read_entire_page(meta)
 		
 		pageCursor = self.virtualCursor - meta['uncompPos']
@@ -192,6 +194,8 @@ class PagesFileLowLevel(object):
 		bytesRemainingInFile = self.plainLen - self.virtualCursor 
 		if bytes > bytesRemainingInFile:
 			bytes = bytesRemainingInFile		
+
+		self.virtualCursor += bytes
 
 		return plain[pageCursor:pageCursor+bytes]
 
@@ -395,6 +399,12 @@ if __name__ == "__main__":
 	pf.write("stuffandmorestuffxx5u4u545ugexx")
 	pf.seek(0)
 	print "readback", pf.read(5)
+
+	pf.seek(999990)
+	pf.write("thecatsatonthematthequickbrownfoxjumpedoverthelazybrowncow")
+	pf.seek(999990)
+	print "a", pf.read(20)
+	print "b", pf.read(20)
 
 	pf.seek(1500000)
 	pf.write("foo42t245u54u45u")
