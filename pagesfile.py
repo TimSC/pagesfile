@@ -197,10 +197,17 @@ class PagesFileLowLevel(object):
 		return self.virtualCursor
 
 	def seek(self, pos, mode=0):
-		if mode != 0:
-			raise Exception("Not implemented")
+		if mode == 0:
+			self.virtualCursor = pos
+			return
 
-		self.virtualCursor = pos
+		if mode == 1:
+			self.virtualCursor += pos
+			return
+
+		if mode == 2:
+			self.virtualCursor = self.plainLen + pos
+			return
 
 	def __len__(self):
 		return self.plainLen
