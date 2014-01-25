@@ -1,4 +1,4 @@
-import bz2, struct, os
+import bz2, struct, os, copy
 
 class PagesFile(object):
 	def __init__(self, fi):
@@ -16,13 +16,14 @@ class PagesFile(object):
 		self.method = "bz2 "
 		self.virtualCursor = 0
 
-		self.pageIndex = [] #Index of on disk pages
+		#Index of on disk pages
+		self.pageIndex = []
+		self.pageTrash = []
 
 		#Index of in memory pages
 		self.pagesPlain = []
 		self.pagesMeta = []
 		self.pagesChanged = []
-		self.pageTrash = []
 
 		#inUse, uncompSize, compSize, uncompPos, allocSize
 		self.headerStruct = struct.Struct(">BQQQQ")
@@ -155,7 +156,7 @@ class PagesFile(object):
 				raise Exception("Extracted data has incorrect length")
 
 			self.pagesPlain.append(plainData)
-			self.pagesMeta.append(meta)
+			self.pagesMeta.append(copy.deepcopy(meta)) #Keep memory and disk metadata separate
 			self.pagesChanged.append(False)
 
 			return len(self.pagesPlain)-1
@@ -172,10 +173,14 @@ class PagesFile(object):
 		meta = self.pagesMeta[pageNum]
 		
 		localCursor = self.virtualCursor - meta['uncompPos']
-		bytesRemain = meta['uncompSize'] - localCursor
-		if bytesRemain < bytes:
-			bytes = bytesRemain
-			
+		bytesRemainInPage = meta['uncompSize'] - localCursor
+		if bytesRemainInPage < bytes:
+			bytes = bytesRemainInPage
+
+		bytesRemainInFile = self.plainLen - self.virtualCursor
+		if bytesRemainInFile < bytes:
+			bytes = bytesRemainInFile
+					
 		return plain[localCursor:localCursor+bytes]
 
 	def tell(self):
@@ -190,10 +195,10 @@ class PagesFile(object):
 	def __len__(self):
 		return self.plainLen
 
-	def _write_page_to_disk(self, i):
+	def _write_page_to_disk(self, pIndex):
 
-		plain = self.pagesPlain[i]
-		meta = self.pagesMeta[i]
+		plain = self.pagesPlain[pIndex]
+		meta = self.pagesMeta[pIndex]
 
 		if meta['method'] != "bz2 ":
 			raise Exception("Not implemented compression:" + meta['method'])
@@ -201,7 +206,7 @@ class PagesFile(object):
 		import bz2
 		encodedData = bz2.compress(plain)
 		
-		#Decide where to write
+		#Decide where to write in file
 		if meta['pagePos'] is None:
 			print "Write new page at end of file"
 			self.handle.seek(0, 2) #Write at end
@@ -214,22 +219,44 @@ class PagesFile(object):
 				print "Write page at existing position"
 
 			else:
-				print "Write existing page at end of file"
-
 				#Free old location
 				self._set_page_unused(meta)
 
-				#Write at end of file
-				self.handle.seek(0, 2)
-				meta['pagePos'] = self.handle.tell()
-				meta['allocSize'] = len(encodedData)
+				#Try to use a trash page
+				bestTPage = None
+				bestSize = None
+				bestIndex = None
+				for i, tpage in enumerate(self.pageTrash):
+					if tpage['allocSize'] < len(encodedData):
+						continue #Too small
+					if bestSize is None or tpage['allocSize'] < bestSize:
+						bestSize = tpage['allocSize']
+						bestTPage = tpage
+						bestIndex = i
+
+				if bestTPage is not None:
+					print "Write existing page to larger area"
+					#Write to trash page
+					meta['pagePos'] = bestTPage['pagePos']
+					meta['allocSize'] = bestTPage['allocSize']
+					del self.pageTrash[bestIndex]
+				else:
+					print "Write existing page at end of file"
+					#Write at end of file
+					self.handle.seek(0, 2)
+					meta['pagePos'] = self.handle.tell()
+					meta['allocSize'] = len(encodedData)
 
 		meta['compSize'] = len(encodedData)
 
+		#Write to disk
 		if meta['method'] == "bz2 ":
 			self._write_page_bz2(meta, plain, encodedData)
 
-		self.pagesChanged[i] = False
+		#Update disk index
+		
+
+		self.pagesChanged[pIndex] = False
 
 	def _set_page_unused(self, meta):
 		print "Set page to unused"
@@ -270,6 +297,9 @@ if __name__ == "__main__":
 
 	pf.seek(1500000)
 	pf.write("foo")
+
+	pf.seek(1500000)
+	print "'"+pf.read(6)+"'"
 
 	pf.flush()
 	print "len", len(pf)
