@@ -23,6 +23,10 @@ class PagesFileLowLevel(object):
 		self.pageIndex = {}
 		self.pageTrash = []
 
+		#Temporary cache of decompressed pages
+		self._pageCache = []
+		self._metaCache = []
+
 		#inUse, uncompSize, compSize, uncompPos, allocSize
 		self.headerStruct = struct.Struct(">BQQQQ")
 
@@ -47,6 +51,10 @@ class PagesFileLowLevel(object):
 		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
 	def write(self, data):
+
+		self._pageCache = []
+		self._metaCache = []
+
 		while len(data) > 0:
 			meta = self._get_page_for_index(self.virtualCursor)
 			if meta is None:
@@ -96,6 +104,8 @@ class PagesFileLowLevel(object):
 
 			self._write_page_to_disk(meta, plain)
 
+			self._pageCache.append(plain)
+			self._metaCache.append(meta)
 			if self.virtualCursor > self.plainLen:
 				self.plainLen = self.virtualCursor 
 
@@ -168,7 +178,10 @@ class PagesFileLowLevel(object):
 		raise Exception("Not implemented")
 
 	def read(self, bytes):
+		self._pageCache = []
+		self._metaCache = []
 		meta = self._get_page_for_index(self.virtualCursor)
+
 		if meta is None:
 
 			if self.virtualCursor < 0 or self.virtualCursor >= self.plainLen:
@@ -205,6 +218,8 @@ class PagesFileLowLevel(object):
 			bytes = bytesRemainingInFile		
 
 		self.virtualCursor += bytes
+		self._pageCache.append(plain)
+		self._metaCache.append(meta)
 
 		return plain[pageCursor:pageCursor+bytes]
 
@@ -331,30 +346,41 @@ class PagesFileLowLevel(object):
 
 class PagesFile(object):
 
-	def __init__(self):
+	def __init__(self, handle):
+
+		if isinstance(handle, PagesFileLowLevel):
+			self.handle = handle
+		else:
+			self.handle = PagesFileLowLevel(handle)
+		
 		self.virtualCursor = 0
 
 		#Index of in memory pages
-		self.pagesPlain = []
-		self.pagesMeta = []
-		self.pagesChanged = []
-
+		self.pagesPlain = {}
+		self.pagesChanged = {}
 
 	def __del__(self):
 		self.flush()
 		
 	def flush(self):
-
-
-		for i, changed in enumerate(self.pagesChanged):
+		for i, uncompPos in enumerate(self.pagesChanged):
+			changed = self.pagesChanged[uncompPos]
 			if not changed:
 				continue
-			self._write_page_to_disk(i)
-
+			#self._write_page_to_disk(i)
 
 	def write(self, data):
 
-		#http://www.skymind.com/~ocrow/python_string/
+		self.handle.seek(self.virtualCursor)
+		self.virtualCursor += len(data)
+		self.handle.write(data)
+
+		for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
+			uncompPos = cm['uncompPos']
+			self.pagesPlain[uncompPos] = cp
+			self.pagesChanged[uncompPos] = False
+
+		return
 
 		while len(data)>0:
 
@@ -367,7 +393,6 @@ class PagesFile(object):
 				self._add_page(pageStart, pageStep)
 				continue
 			
-			meta = self.pagesMeta[pageNum]
 			plainPage = self.pagesPlain[pageNum]
 			self.pagesChanged[pageNum] = True
 			localIndex = self.virtualCursor - meta['uncompPos']
@@ -395,29 +420,62 @@ class PagesFile(object):
 		return None
 
 	def _add_page(self, pos, plainLen):
-		self.pagesMeta.append({'pagePos': None, 'compSize': None, 'uncompPos': pos,
-			 'uncompSize': plainLen, 'method': self.method, 'allocSize': None})
+		self.pagesMeta.append({'pagePos': None})
 		self.pagesChanged.append(True)
 		self.pagesPlain.append(bytearray("".join("\x00" for i in range(plainLen))))
 
 	def read(self, bytes):
-		pass
+
+		outBuffer = []
+		outBufferLen = 0
+
+		while outBufferLen < bytes:
+			self.handle.seek(self.virtualCursor)
+			ret = self.handle.read(bytes - outBufferLen)
+			self.virtualCursor += len(ret)
+
+			for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
+				uncompPos = cm['uncompPos']
+				self.pagesPlain[uncompPos] = cp
+				self.pagesChanged[uncompPos] = False
+
+			if len(ret) == 0:
+				break
+			else:
+				outBuffer.append(ret)
+				outBufferLen += len(ret)
+
+		#Concatenation optimisation: http://www.skymind.com/~ocrow/python_string/
+		return "".join(outBuffer)
 
 	def tell(self):
 		return self.virtualCursor
 
 	def seek(self, pos, mode=0):
-		if mode != 0:
-			raise Exception("Not implemented")
+		if mode == 0:
+			if pos < 0:
+				raise IOError("Invalid argument")
+			self.virtualCursor = pos
+			return
 
-		self.virtualCursor = pos
+		if mode == 1:
+			if self.virtualCursor + pos < 0:
+				raise IOError("Invalid argument")
+			self.virtualCursor += pos
+			return
+
+		if mode == 2:
+			if self.plainLen + pos < 0:
+				raise IOError("Invalid argument")
+			self.virtualCursor = self.plainLen + pos
+			return
 
 	def __len__(self):
-		pass
+		return len(self.handle)
 
 if __name__ == "__main__":
 
-	pf = PagesFileLowLevel("test.pages")	
+	pf = PagesFile("test.pages")	
 	pf.write("stuffandmorestuffxx5u4u545ugexx")
 	pf.seek(0)
 	print "readback", pf.read(5)
@@ -448,5 +506,5 @@ if __name__ == "__main__":
 	pf.flush()
 	print "len", len(pf)
 
-	pf._refresh_page_index()
+	pf.handle._refresh_page_index()
 
