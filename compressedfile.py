@@ -28,6 +28,7 @@ class CompressedFileLowLevel(object):
 		self.virtualCursor = 0
 		self.pageStep = 1000000
 		self.useTrashThreshold = 0.9
+		self.emptyPage = bytearray("".join("\x00" for i in range(self.pageStep)))
 
 		#Index of on disk pages
 		self.pageIndex = {}
@@ -60,6 +61,63 @@ class CompressedFileLowLevel(object):
 		self.handle.seek(4)
 		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
+	def _write_fresh_page(self, data, disableLengthUpdate = 0):
+		#Create a fresh page to contain data
+		meta = {}
+		meta['pagePos'] = None
+		meta['compSize'] = None
+		meta['uncompPos'] = self.virtualCursor - (self.virtualCursor % self.pageStep)
+	 	meta['uncompSize'] = self.pageStep
+		meta['method'] = self.method
+		meta['allocSize'] = None
+			
+		pageCursor = self.virtualCursor - meta['uncompPos']
+		bytesRemainingInPage = meta['uncompSize'] - pageCursor
+		bytes = len(data)
+		if bytes > bytesRemainingInPage:
+			bytes = bytesRemainingInPage
+
+		plain = copy.deepcopy(self.emptyPage)
+		plain[pageCursor:pageCursor+bytes] = data[:bytes]
+		data = data[bytes:]
+		self.virtualCursor += bytes
+				
+		self._write_page_to_disk(meta, plain)
+
+		if self.virtualCursor > self.plainLen and not disableLengthUpdate:
+			self.plainLen = self.virtualCursor 
+
+		return data #Return unwritten data
+
+	def _write_existing_page(self, data, meta, disableLengthUpdate = 0):
+		#Check if entire page written
+		entire = self.virtualCursor == meta['uncompPos'] and len(data) > meta['uncompSize']
+
+		if entire:
+			plain = data[:meta['uncompSize']]
+			data = data[meta['uncompSize']:]
+			self.virtualCursor += meta['uncompSize']
+		else:
+			plain = bytearray(self._read_entire_page(meta))
+			pageCursor = self.virtualCursor - meta['uncompPos']
+			bytesRemainingInPage = meta['uncompSize'] - pageCursor
+			bytes = len(data)
+			if bytes > bytesRemainingInPage:
+				bytes = bytesRemainingInPage
+				
+			plain[pageCursor:pageCursor+bytes] = data[:bytes]
+			data = data[bytes:]
+			self.virtualCursor += bytes
+
+		self._write_page_to_disk(meta, plain)
+
+		self._pageCache.append(plain)
+		self._metaCache.append(meta)
+		if self.virtualCursor > self.plainLen and not disableLengthUpdate:
+			self.plainLen = self.virtualCursor 
+
+		return data #Return unwritten data
+
 	def write(self, data, disableLengthUpdate = 0):
 
 		self._pageCache = []
@@ -68,57 +126,9 @@ class CompressedFileLowLevel(object):
 		while len(data) > 0:
 			meta = self._get_page_for_index(self.virtualCursor)
 			if meta is None:
-				#Create a fresh page to contain data
-				meta = {}
-				meta['pagePos'] = None
-				meta['compSize'] = None
-				meta['uncompPos'] = self.virtualCursor - (self.virtualCursor % self.pageStep)
-			 	meta['uncompSize'] = self.pageStep
-				meta['method'] = self.method
-				meta['allocSize'] = None
-			
-				pageCursor = self.virtualCursor - meta['uncompPos']
-				bytesRemainingInPage = meta['uncompSize'] - pageCursor
-				bytes = len(data)
-				if bytes > bytesRemainingInPage:
-					bytes = bytesRemainingInPage
-
-				plain = bytearray("".join("\x00" for i in range(self.pageStep)))
-				plain[pageCursor:pageCursor+bytes] = data[:bytes]
-				data = data[bytes:]
-				self.virtualCursor += bytes
-				
-				self._write_page_to_disk(meta, plain)
-
-				if self.virtualCursor > self.plainLen and not disableLengthUpdate:
-					self.plainLen = self.virtualCursor 
-				continue
-
-			#Check if entire page written
-			entire = self.virtualCursor == meta['uncompPos'] and len(data) > meta['uncompSize']
-			
-			if entire:
-				plain = data[:meta['uncompSize']]
-				data = data[meta['uncompSize']:]
-				self.virtualCursor += meta['uncompSize']
+				data = self._write_fresh_page(data, disableLengthUpdate)
 			else:
-				plain = bytearray(self._read_entire_page(meta))
-				pageCursor = self.virtualCursor - meta['uncompPos']
-				bytesRemainingInPage = meta['uncompSize'] - pageCursor
-				bytes = len(data)
-				if bytes > bytesRemainingInPage:
-					bytes = bytesRemainingInPage
-				
-				plain[pageCursor:pageCursor+bytes] = data[:bytes]
-				data = data[bytes:]
-				self.virtualCursor += bytes
-
-			self._write_page_to_disk(meta, plain)
-
-			self._pageCache.append(plain)
-			self._metaCache.append(meta)
-			if self.virtualCursor > self.plainLen and not disableLengthUpdate:
-				self.plainLen = self.virtualCursor 
+				data = self._write_existing_page(data, meta, disableLengthUpdate)
 
 	def _refresh_page_index(self):
 		self.handle.seek(0)
@@ -127,6 +137,7 @@ class CompressedFileLowLevel(object):
 
 		self.plainLen = struct.unpack(">Q", self.handle.read(8))[0]
 		self.pageStep = struct.unpack(">Q", self.handle.read(8))[0]
+		self.emptyPage = bytearray("".join("\x00" for i in range(self.pageStep)))
 		self.pageIndex = {}
 		self.pageTrash = []
 		while True:
@@ -423,6 +434,49 @@ class CompressedFile(object):
 			del self.pagesChanged[ind]
 			del self.pagesLastUsed[ind]
 
+	def _write_to_cache(self, data, expectedPageStart, localCursor):
+		#Write to cache
+		page = self.pagesPlain[expectedPageStart]
+		bytesRemainInPage = len(page) - localCursor
+		fragmentLen = len(data)
+		if fragmentLen > bytesRemainInPage:
+			fragmentLen = bytesRemainInPage
+
+		page[localCursor:localCursor+fragmentLen] = data[:fragmentLen]
+		data = data[fragmentLen:]
+		self.virtualCursor += fragmentLen
+		self.pagesChanged[expectedPageStart] = True
+		self.pagesLastUsed[expectedPageStart] = time.time()
+
+		if self.virtualCursor > self.handle.plainLen:
+			self.handle.plainLen = self.virtualCursor
+
+		return data #Return unwritten data
+
+	def _write_to_file(self, data, expectedPageStart, localCursor):
+
+		#Write directly to file
+		bytesRemainInPage = self.handle.pageStep - localCursor
+		writeFragment = data[:bytesRemainInPage]
+		data = data[bytesRemainInPage:]
+
+		self.handle.seek(self.virtualCursor)
+		self.virtualCursor += len(writeFragment)
+		self.handle.write(writeFragment)
+
+		#Get local copy of cached pages
+		for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
+			uncompPos = cm['uncompPos']
+			self.pagesPlain[uncompPos] = bytearray(cp)
+			self.pagesChanged[uncompPos] = False
+			self.pagesLastUsed[uncompPos] = time.time()
+
+		#Clear old cached pages if there are too many
+		if len(self.pagesPlain) > self.maxCachePages:
+			self._flush_old_pages()
+
+		return data #Return unwritten data
+
 	def write(self, data):
 
 		while len(data) > 0:
@@ -431,43 +485,9 @@ class CompressedFile(object):
 			localCursor = self.virtualCursor - expectedPageStart
 
 			if expectedPageStart in self.pagesPlain:
-
-				#Write to cache
-				page = self.pagesPlain[expectedPageStart]		
-				bytesRemainInPage = len(page) - localCursor
-				fragmentLen = len(data)
-				if fragmentLen > bytesRemainInPage:
-					fragmentLen = bytesRemainInPage
-
-				page[localCursor:localCursor+fragmentLen] = data[:fragmentLen]
-				data = data[fragmentLen:]
-				self.virtualCursor += fragmentLen
-				self.pagesChanged[expectedPageStart] = True
-				self.pagesLastUsed[expectedPageStart] = time.time()
-
-				if self.virtualCursor > self.handle.plainLen:
-					self.handle.plainLen = self.virtualCursor
-
+				data = self._write_to_cache(data, expectedPageStart, localCursor)
 			else:
-				#Write directly to file
-				bytesRemainInPage = self.handle.pageStep - localCursor
-				writeFragment = data[:bytesRemainInPage]
-				data = data[bytesRemainInPage:]
-
-				self.handle.seek(self.virtualCursor)
-				self.virtualCursor += len(writeFragment)
-				self.handle.write(writeFragment)
-
-				#Get local copy of cached pages
-				for cp, cm in zip(self.handle._pageCache, self.handle._metaCache):
-					uncompPos = cm['uncompPos']
-					self.pagesPlain[uncompPos] = bytearray(cp)
-					self.pagesChanged[uncompPos] = False
-					self.pagesLastUsed[uncompPos] = time.time()
-
-				#Clear old cached pages if there are too many
-				if len(self.pagesPlain) > self.maxCachePages:
-					self._flush_old_pages()
+				data = self._write_to_file(data, expectedPageStart, localCursor)
 
 	def read(self, bytes=None):
 

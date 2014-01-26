@@ -34,7 +34,9 @@ class HashTableFile(object):
 
 	def clear(self):
 		#Clear hash table
-		for binNum in range(self.hashMask):
+		for binNum in xrange(self.hashMask):
+			if binNum % 100000 == 0 and self.verbose >= 2:
+				print binNum, self.hashMask
 
 			binFiOffset = binNum * self.binStruct.size + self.headerReservedSpace
 			self.handle.seek(binFiOffset)
@@ -51,6 +53,8 @@ class HashTableFile(object):
 		while True:
 			self.handle.seek(cursor)
 			labelHeader = self.handle.read(5)
+			if self.verbose >= 2:
+				print "cursor", cursor, len(labelHeader), len(self.handle)
 			if len(labelHeader) < 5: break
 			labelType, labelLen = struct.unpack(">BI", labelHeader)
 
