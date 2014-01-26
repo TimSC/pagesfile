@@ -53,6 +53,12 @@ class CompressedFileLowLevel(object):
 		self.handle.seek(0)
 		self.handle.write("pset")
 		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
+		
+		#Check we are at the end
+		posExpectedEnd = self.handle.tell()
+		self.handle.seek(0,2)
+		if posExpectedEnd != self.handle.tell():
+			raise Exception("File has unexpected length. Was it empty?")
 
 	def __del__(self):
 		self.flush()
@@ -126,8 +132,10 @@ class CompressedFileLowLevel(object):
 		while len(data) > 0:
 			meta = self._get_page_for_index(self.virtualCursor)
 			if meta is None:
+				#print "Write new page", self.virtualCursor
 				data = self._write_fresh_page(data, disableLengthUpdate)
 			else:
+				#print "Write to existing page", meta['uncompPos']
 				data = self._write_existing_page(data, meta, disableLengthUpdate)
 
 	def _refresh_page_index(self):
