@@ -1,9 +1,20 @@
 
-import struct, json, os, random, string, hashlib, math
+import struct, json, os, random, string, hashlib, math, pickle
 
 class HashTableFile(object):
 	def __init__(self, fi, maskBits = 3, init_storage=False):
 		
+		"""
+		A hash table using open addressing.
+		Each slot in the table can store one and only one entry.
+		Each slot contains a hash, key and value
+		Labels are encoded into the slot or are stored at the end of the file as a label
+		Random probing is used if there as a collision
+		The table will be resized if it is two-thirds full
+		Implementation is largely inspired by the CPython dict implementation
+		https://stackoverflow.com/questions/327311/how-are-pythons-built-in-dictionaries-implemented
+		"""
+
 		createFile = False
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
@@ -21,6 +32,7 @@ class HashTableFile(object):
 		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, num items, num bins used
 		self.labelReservedSpace = 64
 		self.verbose = 0
+		self.usePickle = 1 #otherwise use json
 
 		if createFile or init_storage:
 			self.hashMaskSize = maskBits
@@ -217,6 +229,8 @@ class HashTableFile(object):
 		if isinstance(label, str):
 			return label
 
+		if self.usePickle:
+			return pickle.loads(pickle.dumps(label, protocol = -1))
 		return json.loads(json.dumps(label))
 
 	def _attempt_to_write_bin(self, keyHash, k, v):
@@ -308,31 +322,47 @@ class HashTableFile(object):
 			self.handle.write(labelLen)
 			return pos
 		
-		#JSON is fallback encoder
-		enc = json.dumps(label)
-		labelLen = struct.pack(">I", len(enc))
-		self.handle.write('\x02')
-		self.handle.write(labelLen)
-		self.handle.write(enc)
-		self.handle.write(labelLen)
+
+		#Pickle or JSON is used as the fallback encoder
+		if self.usePickle:
+			enc = pickle.dumps(label, protocol = -1)
+			labelLen = struct.pack(">I", len(enc))
+			self.handle.write('\x03')
+			self.handle.write(labelLen)
+			self.handle.write(enc)
+			self.handle.write(labelLen)			
+		else:
+			enc = json.dumps(label)
+			labelLen = struct.pack(">I", len(enc))
+			self.handle.write('\x02')
+			self.handle.write(labelLen)
+			self.handle.write(enc)
+			self.handle.write(labelLen)
 		return pos
 
 	def _get_label(self, pos):
 		self.handle.seek(pos)
 		labelType = ord(self.handle.read(1))
 
-		if labelType == 1:
+		if labelType == 0x01:
 			#UTF-8 string
 			lenBin = self.handle.read(4)
 			textLen = struct.unpack(">I", lenBin)[0]
 			return str(self.handle.read(textLen).decode("utf-8"))
 
-		if labelType == 2:
+		if labelType == 0x02:
 			#JSON data
 			lenBin = self.handle.read(4)
 			textLen = struct.unpack(">I", lenBin)[0]
 			jsonDat = self.handle.read(textLen)
 			return json.loads(jsonDat)
+
+		if labelType == 0x03:
+			#Pickle data
+			lenBin = self.handle.read(4)
+			textLen = struct.unpack(">I", lenBin)[0]
+			jsonDat = self.handle.read(textLen)
+			return pickle.loads(jsonDat)
 
 		raise Exception("Unsupported data type: "+str(labelType))
 		
@@ -347,20 +377,30 @@ class HashTableFile(object):
 			strenc = label.encode('utf-8')
 			return self._hash(strenc)
 
-		enc = json.dumps(label)
-		return self._hash(enc)
+		if self.usePickle:
+			enc = pickle.dumps(label)
+			return self._hash(enc)
+		else:
+			enc = json.dumps(label)
+			return self._hash(enc)
 
 	def _get_label_hash(self, pos):
 		self.handle.seek(pos)
 		labelType = ord(self.handle.read(1))
 
-		if labelType == 1: #UTF-8 string
+		if labelType == 0x01: #UTF-8 string
 			lenBin = self.handle.read(4)
 			textLen = struct.unpack(">I", lenBin)[0]
 			txt = self.handle.read(textLen)
 			return self._hash(txt)
 
-		if labelType == 2: #JSON data
+		if labelType == 0x02: #JSON data
+			lenBin = self.handle.read(4)
+			textLen = struct.unpack(">I", lenBin)[0]
+			txt = self.handle.read(textLen)
+			return self._hash(txt)
+
+		if labelType == 0x03: #Pickle data
 			lenBin = self.handle.read(4)
 			textLen = struct.unpack(">I", lenBin)[0]
 			txt = self.handle.read(textLen)
@@ -402,7 +442,8 @@ class HashTableFile(object):
 		self.handle.seek(pos)
 		self.handle.write('\x00')
 
-	def allocate_mask_size(self, maskBits):
+	def allocate_mask_size_owned(self, maskBits):
+		#This uses a file rename to skip copying the data
 		if self.verbose: print "allocate_mask_size", maskBits
 
 		if maskBits > 64:
@@ -435,9 +476,13 @@ class HashTableFile(object):
 		except:
 			pass
 
+	def allocate_mask_size(self, maskBits):
+		if self.haveFileOwnership:
+			self.allocate_mask_size_owned(maskBits)
+		else:
+			raise Exception("This cannot be done. Use allocate_mask_size_safe function instead")
+
 	def allocate_size(self, dataSize):
-		if not self.haveFileOwnership:
-			raise Exception("Cannot resize file handle, must be opened directly")
 		requiredBits = int(math.ceil(math.log(dataSize * 3. / 2., 2)))
 		self.allocate_mask_size(requiredBits)
 
@@ -459,6 +504,35 @@ class HashTableFileIter(object):
 			if found == 1:
 				#print "Iterator pos", self.nextBinNum - 1
 				return key
+
+# **********************************************************************
+
+def allocate_mask_size_safe(filename, maskBits):
+	#Resizing should not be done on an opened file
+	if maskBits > 64:
+		raise Exception("Maximum hash length is 64 bits")
+	
+	#Copy table to temp file
+	tmpFilename = filename + str(random.randint(0,1000000)) + ".tmp"
+	os.rename(filename, tmpFilename)
+	oldTable = HashTableFile(tmpFilename)
+
+	#Recreate table
+	newTable = HashTableFile(filename, maskBits)
+
+	#Copy data from old table
+	#print "old length", len(oldTable)
+	for k in oldTable:
+		#print "copying", k
+		newTable.__setitem__(k, oldTable[k])
+	newTable.flush()
+
+	#Delete old table temp file
+	del oldTable
+	try:
+		os.unlink(tmpFilename)
+	except:
+		pass
 
 def RandomObj():
 	ty = random.randint(0, 2)
@@ -520,4 +594,9 @@ if __name__ == "__main__":
 	print "Clear again"
 	table.clear()
 	#table.allocate_mask_size(10)
+
+	del table
+	allocate_mask_size_safe("table.hash", 16)
+	table = HashTableFile("table.hash")
+	print table.hashMaskSize
 
