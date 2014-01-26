@@ -2,21 +2,28 @@
 import struct, json, os, random, string, hashlib, math
 
 class HashTableFile(object):
-	def __init__(self, fi):
-		createFile = not os.path.isfile(fi)
-		self.filename = fi
-		if createFile:
-			self.handle = open(fi, "w+b")
+	def __init__(self, fi, maskBits = 3, init_storage=False):
+		
+		createFile = False
+		if isinstance(fi, str):
+			createFile = not os.path.isfile(fi)
+			self.filename = fi
+			if createFile:
+				self.handle = open(fi, "w+b")
+			else:
+				self.handle = open(fi, "r+b")
+			self.haveFileOwnership = True
 		else:
-			self.handle = open(fi, "r+b")
+			self.handle = fi
+			self.haveFileOwnership = False
 
 		self.headerReservedSpace = 64
 		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, num items, num bins used
 		self.labelReservedSpace = 64
 		self.verbose = 0
 
-		if createFile:
-			self.hashMaskSize = 3
+		if createFile or init_storage:
+			self.hashMaskSize = maskBits
 			self.hashMask = pow(2, self.hashMaskSize)
 			self._init_storage()
 		else:
@@ -28,11 +35,12 @@ class HashTableFile(object):
 	def clear(self):
 		#Clear hash table
 		for binNum in range(self.hashMask):
+
 			binFiOffset = binNum * self.binStruct.size + self.headerReservedSpace
 			self.handle.seek(binFiOffset)
 			binData = self.binStruct.pack(0x00, 0, 0, 0)
 			self.handle.write(binData)
-			self.handle.flush()
+			#self.handle.flush() #Massive performance hit
 
 		self.numItems = 0
 		self.binsInUse = 0
@@ -152,7 +160,7 @@ class HashTableFile(object):
 			raise Exception("Hash table full")
 
 		#Check if we need to resize
-		if self.binsInUse > self.hashMask * 2. / 3.:
+		if self.binsInUse > self.hashMask * 2. / 3. and self.haveFileOwnership:
 			#Increase mask size by two bits
 			self.allocate_mask_size(self.hashMaskSize + 2)
 
@@ -272,7 +280,7 @@ class HashTableFile(object):
 						self.handle.seek(binFiOffset)
 						binData = self.binStruct.pack(newFlags, keyHash, existingKey, vlo)
 						self.handle.write(binData)
-						self.handle.flush()
+						#self.handle.flush() #Massive performance hit
 						if self.verbose >= 2: print "value updated"
 						return 1
 					else:
@@ -424,6 +432,8 @@ class HashTableFile(object):
 			pass
 
 	def allocate_size(self, dataSize):
+		if not self.haveFileOwnership:
+			raise Exception("Cannot resize file handle, must be opened directly")
 		requiredBits = int(math.ceil(math.log(dataSize * 3. / 2., 2)))
 		self.allocate_mask_size(requiredBits)
 

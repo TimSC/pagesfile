@@ -388,6 +388,7 @@ class CompressedFile(object):
 		self.flush()
 		
 	def flush(self):
+
 		if self.handle is None:
 			return
 
