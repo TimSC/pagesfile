@@ -33,6 +33,7 @@ class HashTableFile(object):
 		self.labelReservedSpace = 64
 		self.verbose = 0
 		self.usePickle = 1 #otherwise use json
+		self.modulusIntHash = 0
 
 		if createFile or init_storage:
 			self.hashMaskSize = maskBits
@@ -122,7 +123,10 @@ class HashTableFile(object):
 		self._set_bin_struct()
 
 	def _probe_bins(self, k):
-		primaryKeyHash = self._hash_label(k) % self.hashMask
+		if self.modulusIntHash and isinstance(k, int):
+			primaryKeyHash = k % self.hashMask
+		else:
+			primaryKeyHash = self._hash_label(k) % self.hashMask
 		keyHash = primaryKeyHash
 		found = 0
 		trashHashes = []
