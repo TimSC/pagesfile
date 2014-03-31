@@ -34,6 +34,8 @@ class HashTableFile(object):
 		self.verbose = 0
 		self.usePickle = 1 #otherwise use json
 		self.modulusIntHash = 0
+		self.hashGradient = 5
+		self.hashOffset = 1
 
 		if createFile or init_storage:
 			self.hashMaskSize = maskBits
@@ -123,6 +125,8 @@ class HashTableFile(object):
 		self._set_bin_struct()
 
 	def _probe_bins(self, k):
+
+		#Use simple modules if this mode is enabled
 		if self.modulusIntHash and isinstance(k, int):
 			primaryKeyHash = k % self.hashMask
 		else:
@@ -130,6 +134,7 @@ class HashTableFile(object):
 		keyHash = primaryKeyHash
 		found = 0
 		trashHashes = []
+
 		#print "primary key", primaryKeyHash
 		while not found:
 			#print "look in bin", keyHash
@@ -144,7 +149,7 @@ class HashTableFile(object):
 			if ret == 0 and inTrash:
 				trashHashes.append(keyHash)
 
-			keyHash = ((5*keyHash) + 1) % self.hashMask
+			keyHash = ((self.hashGradient*keyHash) + self.hashOffset) % self.hashMask
 
 			if keyHash == primaryKeyHash:
 				#Searched entire table, still not found

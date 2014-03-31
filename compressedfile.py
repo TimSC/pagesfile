@@ -392,6 +392,11 @@ class CompressedFile(object):
 		self.virtualCursor = 0
 		self.maxCachePages = 50
 
+		self.cacheReads = 0
+		self.cacheWrites = 0
+		self.diskReads = 0
+		self.diskWrites = 0
+
 		#Index of in memory pages
 		self.pagesPlain = {}
 		self.pagesChanged = {}
@@ -443,6 +448,7 @@ class CompressedFile(object):
 			del self.pagesLastUsed[ind]
 
 	def _write_to_cache(self, data, expectedPageStart, localCursor):
+
 		#Write to cache
 		page = self.pagesPlain[expectedPageStart]
 		bytesRemainInPage = len(page) - localCursor
@@ -458,6 +464,8 @@ class CompressedFile(object):
 
 		if self.virtualCursor > self.handle.plainLen:
 			self.handle.plainLen = self.virtualCursor
+
+		self.cacheWrites +=1
 
 		return data #Return unwritten data
 
@@ -482,6 +490,8 @@ class CompressedFile(object):
 		#Clear old cached pages if there are too many
 		if len(self.pagesPlain) > self.maxCachePages:
 			self._flush_old_pages()
+
+		self.diskWrites += 1
 
 		return data #Return unwritten data
 
@@ -522,6 +532,7 @@ class CompressedFile(object):
 					bytesStillNeeded = bytesRemainInFile
 
 				ret = str(page[localCursor:localCursor+bytesStillNeeded])
+				self.cacheReads +=1
 
 			else:
 				#Read from underlying file
@@ -538,6 +549,8 @@ class CompressedFile(object):
 				#Clear old cached pages if there are too many
 				if len(self.pagesPlain) > self.maxCachePages:
 					self._flush_old_pages()
+
+				self.diskReads += 1
 
 			self.virtualCursor += len(ret)
 			if len(ret) == 0:
