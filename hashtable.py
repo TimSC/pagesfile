@@ -2,7 +2,7 @@
 import struct, json, os, random, string, hashlib, math, pickle
 
 class HashTableFile(object):
-	def __init__(self, fi, maskBits = 3, init_storage=False):
+	def __init__(self, fi, maskBits = 3, init_storage=False, modulusIntHash = 0, hashGradient = 5, hashOffset = 1):
 		
 		"""
 		A hash table using open addressing.
@@ -29,15 +29,18 @@ class HashTableFile(object):
 			self.haveFileOwnership = False
 
 		self.headerReservedSpace = 64
-		self.hashHeaderStruct = struct.Struct(">IQQ") #Hash bit length size, num items, num bins used
+		self.hashHeaderStruct = struct.Struct(">IQQBII") #Hash bit length size, num items, num bins used
+		if self.headerReservedSpace < self.hashHeaderStruct.size:
+			raise RuntimeError("Header struct too big for allocated size")
+
 		self.labelReservedSpace = 64
 		self.verbose = 0
 		self.usePickle = 1 #otherwise use json
 
 		#Hash preferences
-		self.modulusIntHash = 0
-		self.hashGradient = 5
-		self.hashOffset = 1
+		self.modulusIntHash = modulusIntHash
+		self.hashGradient = hashGradient
+		self.hashOffset = hashOffset
 
 		if createFile or init_storage:
 			self.hashMaskSize = maskBits
@@ -83,7 +86,8 @@ class HashTableFile(object):
 
 	def flush(self):
 		self.handle.seek(4)
-		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
+		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse,
+			self.modulusIntHash, self.hashGradient, self.hashOffset))
 		self.handle.flush()
 
 	def _set_bin_struct(self):
@@ -102,7 +106,8 @@ class HashTableFile(object):
 		self.handle.write("hash")
 		self.numItems = 0
 		self.binsInUse = 0
-		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse))
+		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse,
+			self.modulusIntHash, self.hashGradient, self.hashOffset))
 		self._set_bin_struct()
 
 		self.labelStart = self.hashMask * self.binStruct.size + self.headerReservedSpace
@@ -122,7 +127,8 @@ class HashTableFile(object):
 			raise Exception("Unknown file format")
 
 		header = self.handle.read(self.hashHeaderStruct.size)
-		self.hashMaskSize, self.numItems, self.binsInUse = self.hashHeaderStruct.unpack(header)
+		self.hashMaskSize, self.numItems, self.binsInUse, \
+			self.modulusIntHash, self.hashGradient, self.hashOffset = self.hashHeaderStruct.unpack(header)
 		self.hashMask = pow(2, self.hashMaskSize)
 		self._set_bin_struct()
 
