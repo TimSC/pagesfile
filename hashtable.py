@@ -33,6 +33,8 @@ class HashTableFile(object):
 		self.labelReservedSpace = 64
 		self.verbose = 0
 		self.usePickle = 1 #otherwise use json
+
+		#Hash preferences
 		self.modulusIntHash = 0
 		self.hashGradient = 5
 		self.hashOffset = 1
@@ -134,11 +136,13 @@ class HashTableFile(object):
 		keyHash = primaryKeyHash
 		found = 0
 		trashHashes = []
+		probeCount = 0
 
 		#print "primary key", primaryKeyHash
 		while not found:
 			#print "look in bin", keyHash
 			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			probeCount += 1
 			inUse = flags & 0x01
 			inTrash = flags & 0x02		
 
@@ -154,6 +158,9 @@ class HashTableFile(object):
 			if keyHash == primaryKeyHash:
 				#Searched entire table, still not found
 				return -2, None, None, trashHashes, None
+
+			#if probeCount > 10:
+			#	print "warning: probe count", probeCount, keyHash, self.hashMask
 
 	def __getitem__(self, k):
 		ret, key, val, trashHashes, actualBin = self._probe_bins(k)
