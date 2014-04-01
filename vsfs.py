@@ -529,12 +529,13 @@ class Vsfs(object):
 			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
 	def _write_to_data_block(self, dataBlockNum, posInBlock, datToWrite):
+		#print "_write_to_data_block", dataBlockNum, posInBlock
+
 		if not isinstance(dataBlockNum, int):
 			raise ValueError("dataBlockNum should be int")
 		if not isinstance(posInBlock, int):
 			raise ValueError("posInBlock should be int")
 
-		print "_write_to_data_block", dataBlockNum, posInBlock
 		if posInBlock + len(datToWrite) > self.blockSize:
 			raise RuntimeError("Too much data to write to block")
 
@@ -542,11 +543,26 @@ class Vsfs(object):
 		self.handle.write(datToWrite)
 
 	def _read_from_data_block(self, dataBlockNum, posInBlock, bytesToRead):
+		#print "_read_from_data_block", dataBlockNum, posInBlock, bytesToRead
+		if bytesToRead == 0:
+			return ""
+
 		if posInBlock + bytesToRead > self.blockSize:
 			raise RuntimeError("Read requires more data than contained in block")
 
 		self.handle.seek((self.dataStart + dataBlockNum) * self.blockSize + posInBlock)
 		return self.handle.read(bytesToRead)
+
+	def _update_file_size(self, inodeNum, newFileSize):
+		inodeEntryPos = self.inodeTableStart * self.blockSize + inodeNum * self.inodeEntrySize
+		inodeType = 2
+		if self.debugMode:
+			self.handle.seek(inodeEntryPos)
+			inodeType, fileSize = self.inodeMetaStruct.unpack(self.handle.read(self.inodeMetaStruct.size))
+			if inodeType != 2:
+				raise RuntimeError("Internal error, unexpected inode code")
+		self.handle.seek(inodeEntryPos)
+		self.handle.write(self.inodeMetaStruct.pack(inodeType, newFileSize))
 
 	def open(self, filename, mode):
 
@@ -598,6 +614,7 @@ class Vsfs(object):
 class VsfsFile(object):
 	def __init__(self, fileInode, parent, mode):
 		self.parent = parent
+		self.fileInode = fileInode
 		self.mode = mode
 		self.meta, self.dataPtrs = self.parent._load_inode(fileInode)
 		self.cursor = 0
@@ -606,10 +623,10 @@ class VsfsFile(object):
 		if self.mode != "r" and self.mode != "w":
 			raise ValueError("Only r and w modes implemented")
 
-		self.numBlocksAlloc = 0
+		self.usedDataPtrs = []
 		for ptr in self.dataPtrs:
 			if ptr is not None:
-				self.numBlocksAlloc += 1
+				self.usedDataPtrs.append(ptr)
 
 	def __len__(self):
 		return self.meta['fileSize']
@@ -622,7 +639,6 @@ class VsfsFile(object):
 		if self.cursor >= self.parent.maxFileSize:
 			raise IOError("Cursor beyond maximum file size")
 
-		print self.dataPtrs
 		writing = True
 		currentData = bytearray(data)
 		bytesWritten = 0
@@ -636,7 +652,7 @@ class VsfsFile(object):
 
 		while writing:			
 			inBlockNum = self.cursor / self.parent.blockSize
-			if inBlockNum < self.numBlocksAlloc:
+			if inBlockNum < len(self.usedDataPtrs):
 				#Use already allocated data blocks
 				posInBlock = self.cursor % self.parent.blockSize
 				bytesToBlockEnd = self.parent.blockSize - posInBlock
@@ -649,7 +665,7 @@ class VsfsFile(object):
 					bytesToWrite = bytesToMaxFileSize
 
 				datToWrite = currentData[:bytesToWrite]
-				self.parent._write_to_data_block(self.dataPtrs[inBlockNum], posInBlock, datToWrite)
+				self.parent._write_to_data_block(self.usedDataPtrs[inBlockNum], posInBlock, datToWrite)
 				bytesWritten += len(datToWrite)
 				currentData = currentData[len(datToWrite):]
 
@@ -663,10 +679,25 @@ class VsfsFile(object):
 					writing = False
 
 				if self.cursor >= self.parent.maxFileSize:
+					self.parent._update_file_size(self.fileInode, self.meta['fileSize'])
 					raise IOError("Maximum file size reached")
 
 			else:
-				raise RuntimeError("Expanding file to additional blocks not implemented")
+				#Allocate more data blocks
+				if len(self.usedDataPtrs) == len(self.dataPtrs):
+					raise RuntimeError("Inode pointer table full, file already max size")
+
+				requiredBlocks = int(math.ceil(float(len(currentData)) / self.parent.blockSize))
+				allocatedBlocks = self.parent._allocate_space_to_inode(self.fileInode, requiredBlocks)
+				self.usedDataPtrs.extend(allocatedBlocks)
+
+				continue
+
+			if len(currentData) == 0:
+				writing = False
+
+		#Update file size in inode table
+		self.parent._update_file_size(self.fileInode, self.meta['fileSize'])
 
 		return bytesWritten
 
@@ -682,16 +713,15 @@ class VsfsFile(object):
 
 		while reading:			
 			inBlockNum = self.cursor / self.parent.blockSize
-			if inBlockNum < numBlocksAlloc and self.cursor <= self.meta['fileSize']:
+			if inBlockNum < numBlocksAlloc and self.cursor <= self.meta['fileSize'] and self.cursor < self.meta['fileSize']:
 				#Use already allocated data blocks
 				posInBlock = self.cursor % self.parent.blockSize
 				bytesToBlockEnd = self.parent.blockSize - posInBlock
 				bytesToFileEnd = self.meta['fileSize'] - self.cursor
 				bytesToRead = bytesToBlockEnd
+				#print bytesToBlockEnd, readLen, bytesToFileEnd, self.cursor, self.meta['fileSize']
 				if readLen < bytesToRead:
 					bytesToRead = readLen
-				if bytesToRead > bytesToBlockEnd:
-					bytesToRead = bytesToBlockEnd
 				if bytesToRead > bytesToFileEnd:
 					 bytesToRead = bytesToFileEnd
 

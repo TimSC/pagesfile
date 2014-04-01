@@ -30,9 +30,15 @@ def ReadAndWriteHacky():
 	testStr = "".join([chr(i % 256) for i in range(6000)])
 
 	fi.write(testStr)
+	if len(fi) != 6000:
+		raise Exception("Wrong file length")
+
 	fi.close()
 
 	fi2 =  fs.open("test1","r")
+	if len(fi2) != 6000:
+		raise Exception("Wrong file length")
+
 	testStr2 = fi2.read(8000)
 	count = 0
 	for a, b in zip(testStr, testStr2):
