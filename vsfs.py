@@ -413,23 +413,24 @@ class Vsfs(object):
 		if not parentFolderOk:
 			raise RuntimeError("Folder has reached the maximum number of files")
 
-		#Preallocate blocks
-		self.handle.seek(self.dataBitmapStart * self.blockSize)
-		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
-
 		requiredFreeBlocks = int(math.ceil(float(fileSize) / self.blockSize))
+		if requiredFreeBlocks > 0:
+			#Preallocate blocks
 
-		dataBlockNums = []
-		preAllocateBlocksStart, preAllocateBlocksSize = FindLargestFreeSpace(dataBitmap, requiredFreeBlocks)
-		if preAllocateBlocksStart is not None:
-			dataBlockNums = range(preAllocateBlocksStart, preAllocateBlocksStart+preAllocateBlocksSize)
+			self.handle.seek(self.dataBitmapStart * self.blockSize)
+			dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
 
-		if len(dataBlockNums) < requiredFreeBlocks:
-			extraBlocks = FindLooseBlocks(dataBitmap, requiredFreeBlocks - len(dataBlockNums), self.sizeDataBlocks, 
-				preAllocateBlocksStart, preAllocateBlocksSize)
-			dataBlockNums.extend(extraBlocks)
+			dataBlockNums = []
+			preAllocateBlocksStart, preAllocateBlocksSize = FindLargestFreeSpace(dataBitmap, requiredFreeBlocks)
+			if preAllocateBlocksStart is not None:
+				dataBlockNums = range(preAllocateBlocksStart, preAllocateBlocksStart+preAllocateBlocksSize)
 
-		#Allocate an inode for this file
+			if len(dataBlockNums) < requiredFreeBlocks:
+				extraBlocks = FindLooseBlocks(dataBitmap, requiredFreeBlocks - len(dataBlockNums), self.sizeDataBlocks, 
+					preAllocateBlocksStart, preAllocateBlocksSize)
+				dataBlockNums.extend(extraBlocks)
+
+		#Allocate an inode number for this file
 		self.handle.seek(self.inodeBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
 		maxInodeNum = self._get_max_inode_number()
@@ -442,8 +443,8 @@ class Vsfs(object):
 		self._create_inode(fileInodeNum, 2, fileSize)
 
 		#Set inode pointers
-		blocksRequired = int(math.ceil(float(fileSize) / self.blockSize))
-		self._allocate_space_to_inode(fileInodeNum, blocksRequired)
+		if requiredFreeBlocks > 0:
+			self._allocate_space_to_inode(fileInodeNum, requiredFreeBlocks)
 
 		#Update parent folder
 		self._add_inode_to_folder(filename, fileInodeNum, parentFolderInodeNum, \
@@ -528,6 +529,12 @@ class Vsfs(object):
 			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
 	def _write_to_data_block(self, dataBlockNum, posInBlock, datToWrite):
+		if not isinstance(dataBlockNum, int):
+			raise ValueError("dataBlockNum should be int")
+		if not isinstance(posInBlock, int):
+			raise ValueError("posInBlock should be int")
+
+		print "_write_to_data_block", dataBlockNum, posInBlock
 		if posInBlock + len(datToWrite) > self.blockSize:
 			raise RuntimeError("Too much data to write to block")
 
@@ -560,7 +567,13 @@ class Vsfs(object):
 				if entry[2] == filename:
 					return VsfsFile(entry[1], self, mode)
 
-		raise IOError("File not found")
+		if mode == "r":
+			raise IOError("File not found")
+
+		#Create new file
+		parentFolder = 0
+		fileInode = self._create_file(filename, 0, parentFolder)
+		return VsfsFile(fileInode, self, mode)
 
 	def listdir(self, path):
 		#Get folder inode
@@ -593,6 +606,11 @@ class VsfsFile(object):
 		if self.mode != "r" and self.mode != "w":
 			raise ValueError("Only r and w modes implemented")
 
+		self.numBlocksAlloc = 0
+		for ptr in self.dataPtrs:
+			if ptr is not None:
+				self.numBlocksAlloc += 1
+
 	def __len__(self):
 		return self.meta['fileSize']
 
@@ -604,7 +622,7 @@ class VsfsFile(object):
 		if self.cursor >= self.parent.maxFileSize:
 			raise IOError("Cursor beyond maximum file size")
 
-		numBlocksAlloc = len(self.dataPtrs)
+		print self.dataPtrs
 		writing = True
 		currentData = bytearray(data)
 		bytesWritten = 0
@@ -618,7 +636,7 @@ class VsfsFile(object):
 
 		while writing:			
 			inBlockNum = self.cursor / self.parent.blockSize
-			if inBlockNum < numBlocksAlloc:
+			if inBlockNum < self.numBlocksAlloc:
 				#Use already allocated data blocks
 				posInBlock = self.cursor % self.parent.blockSize
 				bytesToBlockEnd = self.parent.blockSize - posInBlock

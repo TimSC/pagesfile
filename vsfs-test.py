@@ -20,11 +20,11 @@ def CreateMultipleFilesHacky():
 def ReadAndWriteHacky():
 	fs = vsfs.Vsfs("test.vsfs", 1)
 	#fs._create_inode(0, 1)
-	for i in range(30):
-		fs._create_file("test{0}".format(i), 7000, 0)
+	#for i in range(30):
+	#	fs._create_file("test{0}".format(i), 7000, 0)
 
 	fi =  fs.open("test1","w")
-	if len(fi) != 7000:
+	if len(fi) != 0:
 		raise Exception("Wrong file length")
 	
 	testStr = "".join([chr(i % 256) for i in range(6000)])
