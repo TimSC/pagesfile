@@ -279,6 +279,40 @@ class Vsfs(object):
 
 	def _create_file(self, filename, fileSize, parentFolderInodeNum):
 
+		#Check parent folder can fit another file
+		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+		if parentFolderMeta['inodeType'] != 1:
+			raise RuntimeError("Parent inode must be a folder")
+
+		freeFolderDataBlk = None
+		freeEntryNum = None
+		for ptrNum, ptr in enumerate(parentFolderPtrs):
+			if ptr is None: continue
+			folderBlockList = self._read_folder_block(ptr)
+			for entryNum, (inUse, inode, name) in enumerate(folderBlockList):
+				if inUse: continue
+
+				freeFolderDataBlk = ptr
+				freeEntryNum = entryNum
+
+			if freePtr is not None:
+				break
+
+		if freeFolderDataBlk is None:
+			#Try to allocate more space to keep folder data
+			allocatedBlocks = self._allocate_space_to_inode(parentFolderInodeNum, 1)
+
+			#Clear new blocks
+			for blkNum in allocatedBlocks:
+				self.handle.seek(self.dataStart + blkNum * self.blockSize)
+				self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
+
+			freeFolderDataBlk = allocatedBlocks[0]
+			freeEntryNum = 0
+
+		if freeFolderDataBlk is None:
+			raise RuntimeError("Folder has reached the maximum number of files")
+
 		#Preallocate blocks
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
@@ -294,38 +328,6 @@ class Vsfs(object):
 			extraBlocks = FindLooseBlocks(dataBitmap, requiredFreeBlocks - len(dataBlockNums), self.sizeDataBlocks, 
 				preAllocateBlocksStart, preAllocateBlocksSize)
 			dataBlockNums.extend(extraBlocks)
-
-		#Check parent folder can fit another file
-		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
-		if parentFolderMeta['inodeType'] != 1:
-			raise RuntimeError("Parent inode must be a folder")
-		freePtr = None
-		freeFolderDataBlk = None
-		freeEntryNum = None
-		for ptrNum, ptr in enumerate(parentFolderPtrs):
-			if ptr is None: continue
-			folderBlockList = self._read_folder_block(ptr)
-			for entryNum, (inUse, inode, name) in enumerate(folderBlockList):
-				if inUse: continue
-				freePtr = ptrNum
-				freeFolderDataBlk = ptr
-				freeEntryNum = entryNum
-
-			if freePtr is not None:
-				break
-
-		if freePtr is None:
-			#Try to allocate more space to keep folder data
-			freeBlocks = FindLooseBlocks(dataBitmap, 1, self.sizeDataBlocks)
-			if len(freeBlocks) > 0:
-				for ptrNum, ptr in enumerate(parentFolderPtrs):
-					if ptr is not None: continue
-					freePtr = ptrNum
-					freeFolderDataBlk = freeBlocks[0]
-					freeEntryNum = None
-
-		if freePtr is None:
-			raise RuntimeError("Folder has reached the maximum number of files")
 
 		#Create inode
 		
