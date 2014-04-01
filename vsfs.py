@@ -68,7 +68,7 @@ class Vsfs(object):
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
 		self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
 		self.inodePtrStruct = struct.Struct(">Q")
-		self.folderEntryStruct = struct.Struct(">BQ") #In use, child inode number
+		self.folderEntryStruct = struct.Struct(">BBQ") #In use, filename length, child inode number
 
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
@@ -117,7 +117,7 @@ class Vsfs(object):
 
 
 	def __del__(self):
-		pass
+		self.handle.flush()
 
 	def _print_layout(self):
 		print "Superblock 0"
@@ -271,8 +271,8 @@ class Vsfs(object):
 			datOffset = entryNum * self.folderEntrySize
 			nameOffset = datOffset + self.folderEntryStruct.size
 
-			inUse, inodeNum = self.folderEntryStruct.unpack(folderBlockData[datOffset:nameOffset])
-			nameDat = folderBlockData[nameOffset:nameOffset+self.maxFilenameLen]
+			inUse, filenameLen, inodeNum = self.folderEntryStruct.unpack(folderBlockData[datOffset:nameOffset])
+			nameDat = folderBlockData[nameOffset:nameOffset+filenameLen]
 			out.append([inUse, inodeNum, nameDat.decode('utf-8')])
 		return out
 
@@ -282,10 +282,11 @@ class Vsfs(object):
 		numberOfEntries = self.blockSize / self.folderEntrySize
 		for entry in inodeList:
 
-			self.handle.write(self.folderEntryStruct.pack(entry[0], entry[1]))
 			encodedFilename = entry[2].encode('utf-8')
 			if len(encodedFilename) > self.maxFilenameLen:
 				raise RuntimeError("Internal error, file name too long")
+
+			self.handle.write(self.folderEntryStruct.pack(entry[0], len(encodedFilename), entry[1]))
 			self.handle.write(encodedFilename)
 			self.handle.write("".join(["\x00" for i in range(self.maxFilenameLen - len(encodedFilename))]))
 
@@ -373,7 +374,8 @@ class Vsfs(object):
 		#Allocate an inode for this file
 		self.handle.seek(self.inodeBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
-		freeInodes = FindLooseBlocks(dataBitmap, 1, self.sizeBlocksInodeBitmap)
+		maxInodeNum = self._get_max_inode_number()
+		freeInodes = FindLooseBlocks(dataBitmap, 1, maxInodeNum+1)
 		if len(freeInodes) == 0:
 			raise RuntimeError("Maximum number of inodes reached")
 		fileInodeNum = freeInodes[0]
@@ -468,5 +470,21 @@ class Vsfs(object):
 	def open(self, filename, mode):
 		pass
 
-	
+	def listdir(self, path):
+		#Get folder inode
+		folderMeta, folderPtrs = self._load_inode(0)
+		if folderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")	
+
+		#For each data block
+		out = []
+		for ptr in folderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+			for entry in folderBlock:
+				if entry[0] == 0: 
+					continue #Not in use
+				out.append(entry[2])
+		return out
 
