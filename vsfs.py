@@ -687,20 +687,20 @@ class VsfsFile(object):
 		self.usedDataPtrs = fiUsedDataPtrs #This data is shared between handles
 		
 		self.cursor = 0
-		self.closed = False
+		self._closed = False
 		self.backfillWithZeros = True
 		if self.mode != "r" and self.mode != "w":
 			raise ValueError("Only r and w modes implemented")
 
 	def __del__(self):
-		if not self.closed:
-			self.flush()
+		if not self._closed:
+			self.close()
 
 	def __len__(self):
 		return self.meta['fileSize']
 
 	def write(self, data):
-		if self.closed:
+		if self._closed:
 			raise IOError("File already closed")
 		if self.mode != "w":
 			raise RuntimeError("Not in write mode")
@@ -769,7 +769,7 @@ class VsfsFile(object):
 		return bytesWritten
 
 	def read(self, readLen):
-		if self.closed:
+		if self._closed:
 			raise IOError("File already closed")
 		if self.mode != "r":
 			raise RuntimeError("Not in read mode")
@@ -805,7 +805,7 @@ class VsfsFile(object):
 		return "".join(outBuff)
 
 	def seek(self, pos, seekFrom = 0):
-		if self.closed:
+		if self._closed:
 			raise IOError("File already closed")
 		if seekFrom == 0:
 			if pos < 0:
@@ -815,20 +815,21 @@ class VsfsFile(object):
 			raise RuntimeError("Not implemented")
 
 	def tell(self):
-		if self.closed:
+		if self._closed:
 			raise IOError("File already closed")
 		return self.cursor
 
 	def _internal_close(self):
 		#Message back from file system object that object has been closed
-		self.closed = True
+		self._closed = True
 
 	def close(self):
+		self.flush()
 		self.parent._close_event(self)
-		assert self.closed
+		assert self._closed
 
 	def flush(self):
-		if self.closed:
+		if self._closed:
 			raise IOError("File already closed")
 		self.parent.flush()
 	

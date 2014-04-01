@@ -59,11 +59,32 @@ def ReadAndWrite():
 
 	return 1
 
+def FileHandleSync():
+	fs = vsfs.Vsfs("test.vsfs", 1)
 
+	fi =  fs.open("test1","w")
+	if len(fi) != 0:
+		raise Exception("Wrong file length")
+	
+	fi2 =  fs.open("test1","r")
+	if len(fi2) != 0:
+		raise Exception("Wrong file length")
+
+	testStr = "".join([chr(i % 256) for i in range(6000)])
+	fi.write(testStr)
+
+	if len(fi) != 6000:
+		raise Exception("Wrong file length")
+
+	if len(fi2) != 6000:
+		raise Exception("Wrong file length")
+
+	return 1
 
 if __name__=="__main__":
 	print "CreateMultipleFiles test", CreateMultipleFiles()
 	print "ReadAndWrite test", ReadAndWrite()
+	print "FileHandleSync test", FileHandleSync()
 
 	fs = vsfs.Vsfs("test.vsfs", 1)
 
