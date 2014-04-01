@@ -1,10 +1,16 @@
 import struct, os, math
 
 class Vsfs(object):
+	#A very simple file system in pure python
+	#Inspired by "Operating Systems: Three Easy Pieces", 
+	#by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau, Chapter 40
+	#http://pages.cs.wisc.edu/~remzi/OSTEP/file-implementation.pdf
+
 	def __init__(self, fi, initFs = 0, maxFiles = 1000000, dataSize = 4096 * 4096, blockSize = 4096,
 		maxFileSize = 1024*1024, maxFilenameLen = 256):
 		
 		createFile = False
+
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
 			self.filename = fi
@@ -28,7 +34,7 @@ class Vsfs(object):
 			self.inodePtrStruct = struct.Struct(">Q")
 
 			self.numInodePointers = int(math.ceil(float(maxFileSize) / blockSize))
-			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size + self.maxFilenameLen
+			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
 
 			self.inodeBitmapStart = 1 #Block num
 			self.sizeBlocksInodeBitmap = int(math.ceil(math.ceil(maxFiles / 8.) / blockSize))
@@ -92,16 +98,84 @@ class Vsfs(object):
 		#Format Inode bitmap
 		for blockNum in range(self.inodeBitmapStart, self.dataBitmapStart):
 			self.handle.seek(blockNum * self.blockSize)
-			for i in range(self.blockSize):
-				self.handle.write("\x00")
+			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
 		#Format data bitmap
 		for blockNum in range(self.dataBitmapStart, self.inodeTableStart):
 			self.handle.seek(blockNum * self.blockSize)
 			for i in range(self.blockSize):
-				self.handle.write("\x00")
+				self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
-	def Open(filename, mode):
+		#Create root directory
+		self._create_inode(0, 1, 0, None)
+
+	def _create_inode(self, inodeNum, inodeType, fileSize, inFolderInode):
+
+		if inodeNum == 0: 
+			if inFolderInode != None:
+				raise RuntimeError("Inode 0 is root folder")
+			if inodeType != 1:
+				raise RuntimeError("Inode 0 must be a folder")
+
+		if inodeType == 1 and fileSize != 0:
+			raise RuntimeError("Folders must be created with zero filesize")
+
+		#Check size of inode structures
+		bitmapByte = inodeNum / 8
+		bitmapByteOffset = inodeNum % 8
+		if bitmapByte >= self.sizeBlocksInodeBitmap * self.blockSize:
+			raise RuntimeError("Inode number too large for bitmap")
+
+		inodeEntryOffset = self.inodeEntrySize * (inodeNum + 1)
+		if inodeEntryOffset > self.sizeInodeTableBlocks * self.blockSize:
+			raise RuntimeError("Inode number too large for table")
+			
+		filePos = self.inodeBitmapStart * self.blockSize + bitmapByte
+		self.handle.seek(filePos)
+		bitmapVal = self.handle.read(1)
+		bitmapVal = ord(bitmapVal[0]) #Convert to number
+		inodeExists = bitmapVal & (0x01 << bitmapByteOffset)
+		if inodeExists:
+			raise RuntimeError("Inode already exists")
+
+		#Update inode bitmap
+		updatedBitmapVal = bitmapVal | (0x01 << bitmapByteOffset)
+		self.handle.seek(filePos)
+		bitmapVal = self.handle.write(chr(updatedBitmapVal))
+
+		#Clear inode entry		
+		inodeEntryPos = inodeEntryOffset + self.inodeTableStart * self.blockSize
+		self.handle.seek(inodeEntryPos)
+		self.handle.write("".join(["\x00" for i in range(self.inodeEntrySize)]))
+		
+		#Write into inode table
+		self.handle.seek(inodeEntryPos)
+		self.handle.write(self.inodeMetaStruct.pack(inodeType, fileSize))
+
+	def _get_max_inode_number(self):
+		#Check size of inode structures
+		bitmapCapacity = self.sizeBlocksInodeBitmap * self.blockSize * 8
+		tableCapacity = (self.sizeInodeTableBlocks * self.blockSize / self.inodeEntrySize) - 1
+		if bitmapCapacity < tableCapacity:
+			return bitmapCapacity
+		return tableCapacity
+
+	def _create_file(self, filename, fileSize, inFolderInode):
+		#Preallocate blocks
+		self.handle.seek(self.dataBitmapStart)
+		dataBitmap = self.hande.read(self.sizeBlocksDataBitmap * self.blockSize)
+
+		#Check parent folder
+
+		#Create inode
+		
+		#Set inode pointers
+
+		#Update parent folder
+
+		pass
+
+	def open(self, filename, mode):
 		pass
 
 	
