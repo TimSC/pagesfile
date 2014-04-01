@@ -2,7 +2,7 @@ import struct, os, math
 
 def FindLargestFreeSpace(dataBitmap, atLeastBlockSize = None):
 	if not isinstance(dataBitmap, bytearray):
-		raise RuntimeError("Expecting bytearray")
+		raise TypeError("Expecting bytearray")
 
 	bestRunStart = None
 	bestRunSize = 0
@@ -34,7 +34,7 @@ def FindLargestFreeSpace(dataBitmap, atLeastBlockSize = None):
 
 def FindLooseBlocks(dataBitmap, numBlocks, storageSize, preAllocateBlocksStart = None, preAllocateBlocksSize = None):
 	if not isinstance(dataBitmap, bytearray):
-		raise RuntimeError("Expecting bytearray")
+		raise TypeError("Expecting bytearray")
 	pos = 0
 	freeBlocks = []
 	for byteVal in dataBitmap:
@@ -166,23 +166,22 @@ class Vsfs(object):
 		#Create root directory
 		self._create_folder(None, None)
 
-	def _create_inode(self, inodeNum, inodeType, fileSize, inFolderInode):
+	def _create_inode(self, inodeNum, inodeType, fileSize):
 
 		if inodeNum == 0: 
-			if inFolderInode != None:
-				raise RuntimeError("Inode 0 is root folder")
+
 			if inodeType != 1:
-				raise RuntimeError("Inode 0 must be a folder")
+				raise ValueError("Inode 0 must be a folder")
 
 		if inodeType == 1 and fileSize != 0:
-			raise RuntimeError("Folders must be created with zero filesize")
+			raise ValueError("Folders must be created with zero filesize")
 
 		#Check size of inode structures
 		maxInodeNum = self._get_max_inode_number()
 		if inodeNum > maxInodeNum:
-			raise RuntimeError("Inode number too large")
+			raise ValueError("Inode number too large")
 		if inodeNum < 0:
-			raise RuntimeError("Inode number is negative")
+			raise ValueError("Inode number is negative")
 		bitmapByte = inodeNum / 8
 		bitmapByteOffset = inodeNum % 8
 		inodeEntryOffset = self.inodeEntrySize * inodeNum
@@ -214,9 +213,9 @@ class Vsfs(object):
 		#Check size of inode structures
 		maxInodeNum = self._get_max_inode_number()
 		if inodeNum > maxInodeNum:
-			raise RuntimeError("Inode number too large")
+			raise ValueError("Inode number too large")
 		if inodeNum < 0:
-			raise RuntimeError("Inode number is negative")
+			raise ValueError("Inode number is negative")
 
 		inodeEntryPos = self.inodeTableStart * self.blockSize + inodeNum * self.inodeEntrySize
 		self.handle.seek(inodeEntryPos)
@@ -277,28 +276,41 @@ class Vsfs(object):
 			out.append([inUse, inodeNum, nameDat.decode('utf-8')])
 		return out
 
-	def _create_file(self, filename, fileSize, parentFolderInodeNum):
+	def _write_folder_block(self, blkNum, inodeList):
 
-		#Check parent folder can fit another file
-		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
-		if parentFolderMeta['inodeType'] != 1:
-			raise RuntimeError("Parent inode must be a folder")
+		self.handle.seek(self.dataStart + blkNum * self.blockSize)
+		numberOfEntries = self.blockSize / self.folderEntrySize
+		for entry in inodeList:
 
-		freeFolderDataBlk = None
+			self.handle.write(self.folderEntryStruct.pack(entry[0], entry[1]))
+			encodedFilename = entry[2].encode('utf-8')
+			if len(encodedFilename) > self.maxFilenameLen:
+				raise RuntimeError("Internal error, file name too long")
+			self.handle.write(encodedFilename)
+			self.handle.write("".join(["\x00" for i in range(self.maxFilenameLen - len(encodedFilename))]))
+
+	def _check_folder_can_hold_another_inoid(self, parentFolderInodeNum, parentFolderPtrs):
+
+		freeFolderBlockNum = None
+		freeFolderBlockData = None
 		freeEntryNum = None
+
 		for ptrNum, ptr in enumerate(parentFolderPtrs):
 			if ptr is None: continue
 			folderBlockList = self._read_folder_block(ptr)
 			for entryNum, (inUse, inode, name) in enumerate(folderBlockList):
 				if inUse: continue
-
-				freeFolderDataBlk = ptr
+				freeFolderBlockData = folderBlockList
+				freeFolderBlockNum = ptr
 				freeEntryNum = entryNum
 
-			if freePtr is not None:
+				if freeFolderBlockNum is not None:
+					break
+
+			if freeFolderBlockNum is not None:
 				break
 
-		if freeFolderDataBlk is None:
+		if freeFolderBlockNum is None:
 			#Try to allocate more space to keep folder data
 			allocatedBlocks = self._allocate_space_to_inode(parentFolderInodeNum, 1)
 
@@ -307,10 +319,39 @@ class Vsfs(object):
 				self.handle.seek(self.dataStart + blkNum * self.blockSize)
 				self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
-			freeFolderDataBlk = allocatedBlocks[0]
-			freeEntryNum = 0
+			freeFolderBlockNum = allocatedBlocks[0]
+			freeFolderBlockData = self._read_folder_block(freeFolderBlockNum)
+			freeEntryNum = 0 #Assume we can use the first entry in a new block
 
-		if freeFolderDataBlk is None:
+		if freeFolderBlockNum is None:
+			return 0, freeFolderBlockNum, freeFolderBlockData, freeEntryNum
+		return 1, freeFolderBlockNum, freeFolderBlockData, freeEntryNum
+
+	def _add_inode_to_folder(self, filename, childInodeNum, parentFolderInodeNum, \
+		freeFolderBlockNum, freeFolderBlockData, freeEntryNum):
+
+		if freeFolderBlockData[freeEntryNum][0] != 0:
+			raise RuntimeError("Internal error, expected inuse flag to be zero")
+		freeFolderBlockData[freeEntryNum][0] = 1
+		freeFolderBlockData[freeEntryNum][1] = childInodeNum
+		freeFolderBlockData[freeEntryNum][2] = filename
+		self._write_folder_block(freeFolderBlockNum, freeFolderBlockData)
+
+	def _create_file(self, filename, fileSize, parentFolderInodeNum):
+		print "_create_file"
+
+		encodedFilename = filename.encode("utf-8")
+		if len(encodedFilename) > self.maxFilenameLen:
+			raise ValueError("Filename, when encoded into utf-8, is too long")
+
+		#Check parent folder can fit another file
+		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+		if parentFolderMeta['inodeType'] != 1:
+			raise ValueError("Parent inode must be a folder")
+
+		parentFolderOk, freeFolderBlockNum, freeFolderBlockData, freeEntryNum = \
+			self._check_folder_can_hold_another_inoid(parentFolderInodeNum, parentFolderPtrs)
+		if not parentFolderOk:
 			raise RuntimeError("Folder has reached the maximum number of files")
 
 		#Preallocate blocks
@@ -329,13 +370,26 @@ class Vsfs(object):
 				preAllocateBlocksStart, preAllocateBlocksSize)
 			dataBlockNums.extend(extraBlocks)
 
-		#Create inode
+		#Allocate an inode for this file
+		self.handle.seek(self.inodeBitmapStart * self.blockSize)
+		dataBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
+		freeInodes = FindLooseBlocks(dataBitmap, 1, self.sizeBlocksInodeBitmap)
+		if len(freeInodes) == 0:
+			raise RuntimeError("Maximum number of inodes reached")
+		fileInodeNum = freeInodes[0]
 		
+		#Create inode
+		self._create_inode(fileInodeNum, 2, fileSize)
+
 		#Set inode pointers
+		blocksRequired = int(math.ceil(float(fileSize) / self.blockSize))
+		self._allocate_space_to_inode(fileInodeNum, blocksRequired)
 
 		#Update parent folder
+		self._add_inode_to_folder(filename, fileInodeNum, parentFolderInodeNum, \
+			freeFolderBlockNum, freeFolderBlockData, freeEntryNum)
 
-		pass
+		return fileInodeNum
 
 	def _allocate_space_to_inode(self, inodeNum, blocksToAdd):
 		meta, ptrs = self._load_inode(inodeNum)
@@ -386,7 +440,7 @@ class Vsfs(object):
 
 		if foldername == None:
 			if inFolderInode != None:
-				raise RuntimeError("Root folder has no parent folder")
+				raise ValueError("Root folder has no parent folder")
 
 		#Allocate a free inode
 		if foldername == None:
@@ -402,7 +456,7 @@ class Vsfs(object):
 
 			folderInodeNum = freeInodeNums[0]
 
-		self._create_inode(folderInodeNum, 1, 0, None)		
+		self._create_inode(folderInodeNum, 1, 0)		
 
 		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
 
