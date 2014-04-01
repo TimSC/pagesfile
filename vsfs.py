@@ -70,6 +70,9 @@ class Vsfs(object):
 		
 		createFile = False
 		self.debugMode = False
+		self.handles = {}
+		self.inodeMeta = {}
+		self.inodeDataBlocks = {}
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
 		self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
 		self.inodePtrStruct = struct.Struct(">Q")
@@ -564,6 +567,31 @@ class Vsfs(object):
 		self.handle.seek(inodeEntryPos)
 		self.handle.write(self.inodeMetaStruct.pack(inodeType, newFileSize))
 
+	def _close_event(self, handle):
+		if handle.fileInode not in self.handles:
+			raise RuntimeError("Internal error, expected known inode")
+
+		siblingHandles = self.handles[handle.fileInode]
+		ind = None
+		for i, h in enumerate(siblingHandles):
+			if id(h) == id(handle):
+				ind = i
+			if ind is not None:
+				break
+
+		if ind is None:
+			raise RuntimeError("Internal error, expected known handle")
+
+		#Closed handles are no longer a concern for this class
+		siblingHandles[i]._internal_close()
+		del siblingHandles[i]
+
+		if len(siblingHandles) == 0:
+			#Last handle for inode deleted, metadata can be dropped
+			del self.handles[handle.fileInode]
+			del self.inodeMeta[handle.fileInode]
+			del self.inodeDataBlocks[handle.fileInode]
+
 	def open(self, filename, mode):
 
 		pathSplit = os.path.split(filename)
@@ -585,7 +613,25 @@ class Vsfs(object):
 				if entry[0] == 0: 
 					continue #Not in use
 				if entry[2] == filename:
-					return VsfsFile(entry[1], self, mode)
+					fileInode = entry[1]
+
+					if fileInode not in self.inodeMeta:
+						fiMeta, fiDataPtrs = self._load_inode(fileInode)
+						fiUsedDataPtrs = []
+						for ptr in fiDataPtrs:
+							if ptr is not None:
+								fiUsedDataPtrs.append(ptr)
+
+						self.inodeMeta[fileInode] = fiMeta
+						self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
+
+					handle = VsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
+
+					if fileInode not in self.handles:
+						self.handles[fileInode] = []
+					self.handles[fileInode].append(handle)
+
+					return handle
 
 		if mode == "r":
 			raise IOError("File not found")
@@ -593,7 +639,24 @@ class Vsfs(object):
 		#Create new file
 		parentFolder = 0
 		fileInode = self._create_file(filename, 0, parentFolder)
-		return VsfsFile(fileInode, self, mode)
+
+		if fileInode in self.inodeMeta:
+			raise RuntimeError("Internal error, old meta data retained")
+
+		fiMeta, fiDataPtrs = self._load_inode(fileInode)
+		fiUsedDataPtrs = []
+		for ptr in fiDataPtrs:
+			if ptr is not None:
+				fiUsedDataPtrs.append(ptr)
+
+		self.inodeMeta[fileInode] = fiMeta
+		self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
+
+		handle = VsfsFile(fileInode, self, mode, fiMeta, fiUsedDataPtrs)
+		if fileInode not in self.handles:
+			self.handles[fileInode] = []
+		self.handles[fileInode].append(handle)
+		return handle
 
 	def listdir(self, path):
 		#Get folder inode
@@ -616,21 +679,22 @@ class Vsfs(object):
 #**************** File class *******************
 
 class VsfsFile(object):
-	def __init__(self, fileInode, parent, mode):
+	def __init__(self, fileInode, parent, mode, fiMeta, fiUsedDataPtrs):
 		self.parent = parent
 		self.fileInode = fileInode
 		self.mode = mode
-		self.meta, self.dataPtrs = self.parent._load_inode(fileInode)
+		self.meta = fiMeta #This data is shared between handles
+		self.usedDataPtrs = fiUsedDataPtrs #This data is shared between handles
+		
 		self.cursor = 0
 		self.closed = False
 		self.backfillWithZeros = True
 		if self.mode != "r" and self.mode != "w":
 			raise ValueError("Only r and w modes implemented")
 
-		self.usedDataPtrs = []
-		for ptr in self.dataPtrs:
-			if ptr is not None:
-				self.usedDataPtrs.append(ptr)
+	def __del__(self):
+		if not self.closed:
+			self.flush()
 
 	def __len__(self):
 		return self.meta['fileSize']
@@ -688,13 +752,12 @@ class VsfsFile(object):
 
 			else:
 				#Allocate more data blocks
-				if len(self.usedDataPtrs) == len(self.dataPtrs):
+				if len(self.usedDataPtrs) == self.parent.numInodePointers:
 					raise RuntimeError("Inode pointer table full, file already max size")
 
 				requiredBlocks = int(math.ceil(float(len(currentData)) / self.parent.blockSize))
 				allocatedBlocks = self.parent._allocate_space_to_inode(self.fileInode, requiredBlocks)
 				self.usedDataPtrs.extend(allocatedBlocks)
-
 				continue
 
 			if len(currentData) == 0:
@@ -711,13 +774,12 @@ class VsfsFile(object):
 		if self.mode != "r":
 			raise RuntimeError("Not in read mode")
 
-		numBlocksAlloc = len(self.dataPtrs)
 		reading = True
 		outBuff = []
 
 		while reading:			
 			inBlockNum = self.cursor / self.parent.blockSize
-			if inBlockNum < numBlocksAlloc and self.cursor <= self.meta['fileSize'] and self.cursor < self.meta['fileSize']:
+			if inBlockNum < len(self.usedDataPtrs) and self.cursor <= self.meta['fileSize'] and self.cursor < self.meta['fileSize']:
 				#Use already allocated data blocks
 				posInBlock = self.cursor % self.parent.blockSize
 				bytesToBlockEnd = self.parent.blockSize - posInBlock
@@ -729,7 +791,7 @@ class VsfsFile(object):
 				if bytesToRead > bytesToFileEnd:
 					 bytesToRead = bytesToFileEnd
 
-				tmpDat = self.parent._read_from_data_block(self.dataPtrs[inBlockNum], posInBlock, bytesToRead)
+				tmpDat = self.parent._read_from_data_block(self.usedDataPtrs[inBlockNum], posInBlock, bytesToRead)
 
 				readLen -= len(tmpDat)
 				outBuff.append(tmpDat)
@@ -743,6 +805,8 @@ class VsfsFile(object):
 		return "".join(outBuff)
 
 	def seek(self, pos, seekFrom = 0):
+		if self.closed:
+			raise IOError("File already closed")
 		if seekFrom == 0:
 			if pos < 0:
 				raise IOError("Cannot seek to negative position")
@@ -751,11 +815,20 @@ class VsfsFile(object):
 			raise RuntimeError("Not implemented")
 
 	def tell(self):
+		if self.closed:
+			raise IOError("File already closed")
 		return self.cursor
 
-	def close(self):
+	def _internal_close(self):
+		#Message back from file system object that object has been closed
 		self.closed = True
 
+	def close(self):
+		self.parent._close_event(self)
+		assert self.closed
+
 	def flush(self):
+		if self.closed:
+			raise IOError("File already closed")
 		self.parent.flush()
 	
