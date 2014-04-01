@@ -1,14 +1,16 @@
 import struct, os, math
 
 def FindLargestFreeSpace(dataBitmap, atLeastBlockSize = None):
+	if not isinstance(dataBitmap, bytearray):
+		raise RuntimeError("Expecting bytearray")
+
 	bestRunStart = None
 	bestRunSize = 0
 	currentRunStart = None
 	currentRunSize = 0
 	pos = 0
 	
-	for byte in dataBitmap:
-		byteVal = ord(byte)
+	for byteVal in dataBitmap:
 		for bitNum in range(8):
 			bitVal = (byteVal & (0x01 << bitNum)) != 0
 			if bitVal == 0:
@@ -31,10 +33,11 @@ def FindLargestFreeSpace(dataBitmap, atLeastBlockSize = None):
 	return bestRunStart, bestRunSize #Data block number
 
 def FindLooseBlocks(dataBitmap, numBlocks, storageSize, preAllocateBlocksStart = None, preAllocateBlocksSize = None):
+	if not isinstance(dataBitmap, bytearray):
+		raise RuntimeError("Expecting bytearray")
 	pos = 0
 	freeBlocks = []
-	for byte in dataBitmap:
-		byteVal = ord(byte)
+	for byteVal in dataBitmap:
 		for bitNum in range(8):
 			bitVal = (byteVal & (0x01 << bitNum)) != 0
 			if bitVal == 0:
@@ -63,6 +66,9 @@ class Vsfs(object):
 		
 		createFile = False
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
+		self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
+		self.inodePtrStruct = struct.Struct(">Q")
+		self.folderEntryStruct = struct.Struct(">BQ") #In use, child inode number
 
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
@@ -82,14 +88,10 @@ class Vsfs(object):
 			self.blockSize = blockSize
 			self.maxFilenameLen = maxFilenameLen
 
-			#self.superBlockStruct = struct.Struct("")
-			self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
-			self.inodePtrStruct = struct.Struct(">Q")
-
 			self.numInodePointers = int(math.ceil(float(maxFileSize) / blockSize))
 			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
 
-			self.inodeBitmapStart = 1 #Block num
+			self.inodeBitmapStart = 1 #Starting block num
 			self.sizeBlocksInodeBitmap = int(math.ceil(math.ceil(maxFiles / 8.) / blockSize))
 			self.dataBitmapStart = self.inodeBitmapStart + self.sizeBlocksInodeBitmap #Block num
 			self.sizeDataBlocks = int(math.ceil(float(dataSize) / blockSize)) #Blocks to contain actual data
@@ -100,6 +102,8 @@ class Vsfs(object):
 			self.sizeInodeTableBlocks = int(math.ceil(float(self.inodeTableSizeBytes) / blockSize))
 
 			self.dataStart = self.inodeTableStart + self.sizeInodeTableBlocks
+
+			self.folderEntrySize = self.folderEntryStruct.size + self.maxFilenameLen
 
 			self._init_superblock()
 			self._quick_format()
@@ -131,6 +135,7 @@ class Vsfs(object):
 	def _update_fs_data(self):
 		self.handle.seek(4)
 		self.handle.write(struct.pack(">Q", self.blockSize))
+		self.handle.write(struct.pack(">Q", self.maxFilenameLen))
 
 		#Fundamental layout
 		self.handle.write(struct.pack(">Q", self.inodeBitmapStart))
@@ -234,6 +239,21 @@ class Vsfs(object):
 				dataPtrs.append(None)
 		return meta, dataPtrs
 
+	def _update_inode(self, inodeNum, meta, ptrs):
+		inodeEntryOffset = self.inodeEntrySize * inodeNum
+
+		inodeEntryPos = inodeEntryOffset + self.inodeTableStart * self.blockSize
+		self.handle.seek(inodeEntryPos)
+		
+		self.handle.seek(inodeEntryPos)
+		self.handle.write(self.inodeMetaStruct.pack(meta['inodeType'], meta['fileSize']))
+
+		for ptrNum, ptr in enumerate(ptrs):
+			if ptr != None:
+				self.handle.write(struct.pack(">Q", ptr))
+			else:
+				self.handle.write(struct.pack(">Q", self.freeVal))
+
 	def _get_max_inode_number(self):
 		#Check size of inode structures
 		bitmapCapacity = self.sizeBlocksInodeBitmap * self.blockSize * 8
@@ -246,7 +266,7 @@ class Vsfs(object):
 
 		#Preallocate blocks
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
-		dataBitmap = self.handle.read(self.sizeBlocksDataBitmap * self.blockSize)
+		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
 
 		requiredFreeBlocks = int(math.ceil(float(fileSize) / self.blockSize))
 
@@ -270,10 +290,49 @@ class Vsfs(object):
 
 		pass
 
-	def _allocate_space_to_folder(self, folderInodeNum):
-		print self._load_inode(folderInodeNum)
+	def _allocate_space_to_inode(self, inodeNum, blocksToAdd):
+		meta, ptrs = self._load_inode(inodeNum)
+		
+		#Find free pointer
+		freePtrNums = []
+		for i, ptr in enumerate(ptrs):
+			if ptr == None:
+				freePtrNums.append(i)
+			if len(freePtrNums) >= blocksToAdd:
+				break
+		
+		if len(freePtrNums) < blocksToAdd:
+			raise RuntimeError("Insufficient pointer space")
 
-	
+		#Get a free block
+		self.handle.seek(self.dataBitmapStart * self.blockSize)
+		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
+		freeBlocks = FindLooseBlocks(dataBitmap, blocksToAdd, self.sizeDataBlocks)
+
+		if len(freeBlocks) < blocksToAdd:
+			raise RuntimeError("Insufficient blocks available")
+
+		for i, blk in enumerate(freeBlocks):
+			#Update data bitmap
+			bitmapByte = blk / 8
+			bitmapByteOffset = blk % 8
+		
+			filePos = self.dataBitmapStart * self.blockSize + bitmapByte
+			byteVal = dataBitmap[bitmapByte]
+			bitVal = (byteVal & (0x01 << bitmapByteOffset)) != 0
+			if bitVal:
+				raise RuntimeError("Interal error, bitval should be zero")
+			updatedByteVal = byteVal | (0x01 << bitmapByteOffset)
+			self.handle.seek(filePos)
+			self.handle.write(chr(updatedByteVal))
+			dataBitmap[bitmapByte] = chr(updatedByteVal)
+
+			#Update inode entry in memory
+			ptrs[freePtrNums[i]] = blk
+
+		#Update inode entry on disk
+		self._update_inode(inodeNum, meta, ptrs)
+		return freeBlocks
 
 	def _create_folder(self, foldername, inFolderInode):
 		print "_create_folder"
@@ -291,14 +350,25 @@ class Vsfs(object):
 
 			maxInodeNum = self._get_max_inode_number()
 			freeInodeNums = FindLooseBlocks(inodeBitmap, 1, maxInodeNum+1)
-			if freeInodeNums is None or len(freeInodeNums) == 0:
+			if len(freeInodeNums) == 0:
 				raise RuntimeError("Inode bitmap full")
 
 			folderInodeNum = freeInodeNums[0]
 
 		self._create_inode(folderInodeNum, 1, 0, None)		
 
-		self._allocate_space_to_folder(folderInodeNum)
+		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
+
+		#numberOfEntries = (self.blockSize - self.inodeMetaStruct.size) / self.folderEntrySize
+		#print numberOfEntries
+
+		#Clear new blocks
+		for blkNum in allocatedBlocks:
+			self.handle.seek(self.dataStart + blkNum * self.blockSize)
+			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
+
+		#	for entryNum in range(numberOfEntries):
+		#		pass
 
 	def open(self, filename, mode):
 		pass
