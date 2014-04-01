@@ -65,6 +65,7 @@ class Vsfs(object):
 		maxFileSize = 10*1024, maxFilenameLen = 256):
 		
 		createFile = False
+		self.debugMode = True
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
 		self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
 		self.inodePtrStruct = struct.Struct(">Q")
@@ -239,11 +240,10 @@ class Vsfs(object):
 		return meta, dataPtrs
 
 	def _update_inode(self, inodeNum, meta, ptrs):
+		print "_update_inode", meta
 		inodeEntryOffset = self.inodeEntrySize * inodeNum
 
 		inodeEntryPos = inodeEntryOffset + self.inodeTableStart * self.blockSize
-		self.handle.seek(inodeEntryPos)
-		
 		self.handle.seek(inodeEntryPos)
 		self.handle.write(self.inodeMetaStruct.pack(meta['inodeType'], meta['fileSize']))
 
@@ -312,6 +312,7 @@ class Vsfs(object):
 				break
 
 		if freeFolderBlockNum is None:
+			print "x"
 			#Try to allocate more space to keep folder data
 			allocatedBlocks = self._allocate_space_to_inode(parentFolderInodeNum, 1)
 
@@ -323,6 +324,12 @@ class Vsfs(object):
 			freeFolderBlockNum = allocatedBlocks[0]
 			freeFolderBlockData = self._read_folder_block(freeFolderBlockNum)
 			freeEntryNum = 0 #Assume we can use the first entry in a new block
+
+		if self.debugMode:
+			#Debugging tests
+			testMeta, testPtrs = self._load_inode(parentFolderInodeNum)
+			if testMeta['inodeType'] != 1:
+				raise RuntimeException("Folder inode type corrupted")
 
 		if freeFolderBlockNum is None:
 			return 0, freeFolderBlockNum, freeFolderBlockData, freeEntryNum
@@ -347,6 +354,7 @@ class Vsfs(object):
 
 		#Check parent folder can fit another file
 		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+		print parentFolderMeta
 		if parentFolderMeta['inodeType'] != 1:
 			raise ValueError("Parent inode must be a folder")
 
