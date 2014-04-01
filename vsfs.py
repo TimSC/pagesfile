@@ -260,9 +260,24 @@ class Vsfs(object):
 		tableCapacity = (self.sizeInodeTableBlocks * self.blockSize / self.inodeEntrySize) - 1
 		if bitmapCapacity < tableCapacity:
 			return bitmapCapacity
-		return tableCapacity
+		return tableCapacity #This number is one less than the number of capacity slots
 
-	def _create_file(self, filename, fileSize, inFolderInode):
+	def _read_folder_block(self, blkNum):
+
+		out = []
+		self.handle.seek(self.dataStart + blkNum * self.blockSize)
+		folderBlockData = self.handle.read(self.blockSize)
+		numberOfEntries = self.blockSize / self.folderEntrySize
+		for entryNum in range(numberOfEntries):
+			datOffset = entryNum * self.folderEntrySize
+			nameOffset = datOffset + self.folderEntryStruct.size
+
+			inUse, inodeNum = self.folderEntryStruct.unpack(folderBlockData[datOffset:nameOffset])
+			nameDat = folderBlockData[nameOffset:nameOffset+self.maxFilenameLen]
+			out.append([inUse, inodeNum, nameDat.decode('utf-8')])
+		return out
+
+	def _create_file(self, filename, fileSize, parentFolderInodeNum):
 
 		#Preallocate blocks
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
@@ -280,7 +295,37 @@ class Vsfs(object):
 				preAllocateBlocksStart, preAllocateBlocksSize)
 			dataBlockNums.extend(extraBlocks)
 
-		#Check parent folder
+		#Check parent folder can fit another file
+		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+		if parentFolderMeta['inodeType'] != 1:
+			raise RuntimeError("Parent inode must be a folder")
+		freePtr = None
+		freeFolderDataBlk = None
+		freeEntryNum = None
+		for ptrNum, ptr in enumerate(parentFolderPtrs):
+			if ptr is None: continue
+			folderBlockList = self._read_folder_block(ptr)
+			for entryNum, (inUse, inode, name) in enumerate(folderBlockList):
+				if inUse: continue
+				freePtr = ptrNum
+				freeFolderDataBlk = ptr
+				freeEntryNum = entryNum
+
+			if freePtr is not None:
+				break
+
+		if freePtr is None:
+			#Try to allocate more space to keep folder data
+			freeBlocks = FindLooseBlocks(dataBitmap, 1, self.sizeDataBlocks)
+			if len(freeBlocks) > 0:
+				for ptrNum, ptr in enumerate(parentFolderPtrs):
+					if ptr is not None: continue
+					freePtr = ptrNum
+					freeFolderDataBlk = freeBlocks[0]
+					freeEntryNum = None
+
+		if freePtr is None:
+			raise RuntimeError("Folder has reached the maximum number of files")
 
 		#Create inode
 		
@@ -359,16 +404,10 @@ class Vsfs(object):
 
 		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
 
-		#numberOfEntries = (self.blockSize - self.inodeMetaStruct.size) / self.folderEntrySize
-		#print numberOfEntries
-
 		#Clear new blocks
 		for blkNum in allocatedBlocks:
 			self.handle.seek(self.dataStart + blkNum * self.blockSize)
 			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
-
-		#	for entryNum in range(numberOfEntries):
-		#		pass
 
 	def open(self, filename, mode):
 		pass
