@@ -1,5 +1,7 @@
 import struct, os, math
 
+#******************** Utility functions *********************
+
 def FindLargestFreeSpace(dataBitmap, atLeastBlockSize = None):
 	if not isinstance(dataBitmap, bytearray):
 		raise TypeError("Expecting bytearray")
@@ -54,6 +56,8 @@ def FindLooseBlocks(dataBitmap, numBlocks, storageSize, preAllocateBlocksStart =
 				return freeBlocks
 
 	return freeBlocks
+
+#******************* Very simple file system *******************
 
 class Vsfs(object):
 	#A very simple file system in pure python
@@ -118,6 +122,9 @@ class Vsfs(object):
 
 
 	def __del__(self):
+		self.flush()
+
+	def flush(self):
 		self.handle.flush()
 
 	def _print_layout(self):
@@ -474,8 +481,40 @@ class Vsfs(object):
 			self.handle.seek(self.dataStart + blkNum * self.blockSize)
 			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
+	def _write_to_data_block(self, dataBlockNum, posInBlock, datToWrite):
+		if posInBlock + len(datToWrite) > self.blockSize:
+			raise RuntimeError("Too much data to write to block")
+
+		self.handle.seek((self.dataStart + dataBlockNum) * self.blockSize + posInBlock)
+		self.handle.write(datToWrite)
+
+	def _read_from_data_block(self, dataBlockNum, posInBlock, bytesToRead):
+		if posInBlock + bytesToRead > self.blockSize:
+			raise RuntimeError("Read requires more data than contained in block")
+
+		self.handle.seek((self.dataStart + dataBlockNum) * self.blockSize + posInBlock)
+		return self.handle.read(bytesToRead)
+
 	def open(self, filename, mode):
-		pass
+
+		#Get folder inode
+		folderMeta, folderPtrs = self._load_inode(0)
+		if folderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")	
+
+		#For each data block
+
+		for ptr in folderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+			for entry in folderBlock:
+				if entry[0] == 0: 
+					continue #Not in use
+				if entry[2] == filename:
+					return VsfsFile(entry[1], self, mode)
+
+		raise IOError("File not found")
 
 	def listdir(self, path):
 		#Get folder inode
@@ -495,3 +534,108 @@ class Vsfs(object):
 				out.append(entry[2])
 		return out
 
+#**************** File class *******************
+
+class VsfsFile(object):
+	def __init__(self, fileInode, parent, mode):
+		self.parent = parent
+		self.mode = mode
+		self.meta, self.dataPtrs = self.parent._load_inode(fileInode)
+		self.cursor = 0
+		self.closed = False
+		if self.mode != "r" and self.mode != "w":
+			raise ValueError("Only r and w modes implemented")
+
+	def __len__(self):
+		return self.meta['fileSize']
+
+	def write(self, data):
+		if self.closed:
+			raise IOError("File already closed")
+		if self.mode != "w":
+			raise RuntimeError("Not in write mode")
+
+		numBlocksAlloc = len(self.dataPtrs)
+		writing = True
+		currentData = bytearray(data)
+		bytesWritten = 0
+
+		while writing:			
+			inBlockNum = self.cursor / self.parent.blockSize
+			if inBlockNum < numBlocksAlloc:
+				#Use already allocated data blocks
+				posInBlock = self.cursor % self.parent.blockSize
+				bytesToBlockEnd = self.parent.blockSize - posInBlock
+
+				datToWrite = currentData[:bytesToBlockEnd]
+				self.parent._write_to_data_block(self.dataPtrs[inBlockNum], posInBlock, datToWrite)
+				bytesWritten += len(datToWrite)
+				currentData = currentData[len(datToWrite):]
+
+				self.cursor += len(datToWrite)
+
+				if self.cursor > self.meta['fileSize']:
+					print "file mini-expand"
+					self.meta['fileSize'] = self.cursor
+
+				if len(currentData) == 0:
+					writing = False
+
+			else:
+				raise RuntimeError("Expanding file to additional blocks not implemented")
+
+		return bytesWritten
+
+	def read(self, readLen):
+		if self.closed:
+			raise IOError("File already closed")
+		if self.mode != "r":
+			raise RuntimeError("Not in read mode")
+
+		numBlocksAlloc = len(self.dataPtrs)
+		reading = True
+		outBuff = []
+
+		while reading:			
+			inBlockNum = self.cursor / self.parent.blockSize
+			if inBlockNum < numBlocksAlloc and self.cursor <= self.meta['fileSize']:
+				#Use already allocated data blocks
+				posInBlock = self.cursor % self.parent.blockSize
+				bytesToBlockEnd = self.parent.blockSize - posInBlock
+				bytesToFileEnd = self.meta['fileSize'] - self.cursor
+				bytesToRead = bytesToBlockEnd
+				if readLen < bytesToRead:
+					bytesToRead = readLen
+				if readLen > bytesToFileEnd:
+					 bytesToRead = bytesToFileEnd
+
+				tmpDat = self.parent._read_from_data_block(self.dataPtrs[inBlockNum], posInBlock, bytesToRead)
+
+				readLen -= len(tmpDat)
+				outBuff.append(tmpDat)
+			else:
+				#End of file
+				reading = False
+
+			if readLen <= 0:
+				reading = False
+
+		return "".join(outBuff)
+
+	def seek(self, pos, seekFrom = 0):
+		if seekFrom == 0:
+			if pos < 0:
+				raise IOError("Cannot seek to negative position")
+			self.cursor = pos
+		else:
+			raise RuntimeError("Not implemented")
+
+	def tell(self):
+		return self.cursor
+
+	def close(self):
+		self.closed = True
+
+	def flush(self):
+		self.parent.flush()
+	

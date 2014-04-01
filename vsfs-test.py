@@ -9,3 +9,12 @@ if __name__=="__main__":
 		fs._create_file("test{0}".format(i), 7000, 0)
 	print fs.listdir("/")
 
+	fi =  fs.open("test1","w")
+	print fi
+	print len(fi)
+	fi.write("foobar")
+	fi.close()
+
+	fi2 =  fs.open("test1","r")
+	print fi2.read(6)
+	
