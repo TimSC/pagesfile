@@ -7,7 +7,6 @@ def CreateMultipleFilesHacky():
 	for i in range(30):
 		fs._create_file("test{0}".format(i), 7000, 0)
 	found = fs.listdir("/")
-	print len(found)
 	if len(found) != 30:
 		os.unlink("test.vsfs")
 		raise Exception("Wrong number of files")
@@ -46,7 +45,7 @@ def ReadAndWriteHacky():
 	del fs
 
 	fs = vsfs.Vsfs("test.vsfs")
-	fs._print_layout()
+	#fs._print_layout()
 
 	fi2 =  fs.open("test1","r")
 	testStr2 = fi2.read(8000)
@@ -55,6 +54,8 @@ def ReadAndWriteHacky():
 		count += 1
 	if count != 6000:
 		raise Exception("Read back failed (2)")
+
+	return 1
 
 if __name__=="__main__":
 	print "CreateMultipleFiles test", CreateMultipleFilesHacky()

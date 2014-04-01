@@ -215,7 +215,7 @@ class Vsfs(object):
 		self._create_folder(None, None)
 
 	def _create_inode(self, inodeNum, inodeType, fileSize):
-
+		#print "_create_inode"
 		if inodeNum == 0: 
 
 			if inodeType != 1:
@@ -309,10 +309,13 @@ class Vsfs(object):
 		return tableCapacity #This number is one less than the number of capacity slots
 
 	def _read_folder_block(self, blkNum):
+		#print "_read_folder_block", blkNum
 
 		out = []
 		self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 		folderBlockData = self.handle.read(self.blockSize)
+		if len(folderBlockData) != self.blockSize:
+			raise RuntimeError("Failed to read data block "+str(blkNum))
 		numberOfEntries = self.blockSize / self.folderEntrySize
 		for entryNum in range(numberOfEntries):
 			datOffset = entryNum * self.folderEntrySize
@@ -324,6 +327,7 @@ class Vsfs(object):
 		return out
 
 	def _write_folder_block(self, blkNum, inodeList):
+		#print "_write_folder_block", blkNum
 
 		self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 		numberOfEntries = self.blockSize / self.folderEntrySize
@@ -448,8 +452,8 @@ class Vsfs(object):
 		return fileInodeNum
 
 	def _allocate_space_to_inode(self, inodeNum, blocksToAdd):
-		meta, ptrs = self._load_inode(inodeNum)
-		
+		meta, ptrs = self._load_inode(inodeNum)	
+
 		#Find free pointer
 		freePtrNums = []
 		for i, ptr in enumerate(ptrs):
@@ -492,7 +496,7 @@ class Vsfs(object):
 		return freeBlocks
 
 	def _create_folder(self, foldername, inFolderInode):
-		#print "_create_folder"
+		#print "_create_folder", foldername, inFolderInode
 
 		if foldername == None:
 			if inFolderInode != None:
@@ -512,13 +516,15 @@ class Vsfs(object):
 
 			folderInodeNum = freeInodeNums[0]
 
-		self._create_inode(folderInodeNum, 1, 0)		
+		self._create_inode(folderInodeNum, 1, 0)
+
+		#print self._load_inode(folderInodeNum)
 
 		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
 
 		#Clear new blocks
 		for blkNum in allocatedBlocks:
-			self.handle.seek(self.dataStart + blkNum * self.blockSize)
+			self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
 	def _write_to_data_block(self, dataBlockNum, posInBlock, datToWrite):
@@ -632,7 +638,7 @@ class VsfsFile(object):
 				self.cursor += len(datToWrite)
 
 				if self.cursor > self.meta['fileSize']:
-					print "file mini-expand"
+					#print "file mini-expand"
 					self.meta['fileSize'] = self.cursor
 
 				if len(currentData) == 0:
