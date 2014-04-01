@@ -566,7 +566,9 @@ class Vsfs(object):
 
 	def open(self, filename, mode):
 
-		print os.path.split(filename)
+		pathSplit = os.path.split(filename)
+		if len(pathSplit[0]) > 0:
+			raise Exception("Folders not implemented yet")
 
 		#Get folder inode
 		folderMeta, folderPtrs = self._load_inode(0)
