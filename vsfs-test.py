@@ -63,3 +63,7 @@ if __name__=="__main__":
 	print "CreateMultipleFiles test", CreateMultipleFiles()
 	print "ReadAndWrite test", ReadAndWrite()
 
+	fs = vsfs.Vsfs("test.vsfs", 1)
+
+	fi =  fs.open("foo/test1","w")
+

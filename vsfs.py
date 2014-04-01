@@ -566,6 +566,8 @@ class Vsfs(object):
 
 	def open(self, filename, mode):
 
+		print os.path.split(filename)
+
 		#Get folder inode
 		folderMeta, folderPtrs = self._load_inode(0)
 		if folderMeta['inodeType'] != 1:
