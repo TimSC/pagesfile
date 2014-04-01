@@ -312,13 +312,18 @@ class Vsfs(object):
 				break
 
 		if freeFolderBlockNum is None:
-			print "x"
 			#Try to allocate more space to keep folder data
 			allocatedBlocks = self._allocate_space_to_inode(parentFolderInodeNum, 1)
 
+			if self.debugMode:
+				#Debugging tests
+				testMeta, testPtrs = self._load_inode(parentFolderInodeNum)
+				if testMeta['inodeType'] != 1:
+					raise RuntimeException("Folder inode type corrupted")
+
 			#Clear new blocks
 			for blkNum in allocatedBlocks:
-				self.handle.seek(self.dataStart + blkNum * self.blockSize)
+				self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 				self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 
 			freeFolderBlockNum = allocatedBlocks[0]
@@ -354,7 +359,7 @@ class Vsfs(object):
 
 		#Check parent folder can fit another file
 		parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
-		print parentFolderMeta
+
 		if parentFolderMeta['inodeType'] != 1:
 			raise ValueError("Parent inode must be a folder")
 
