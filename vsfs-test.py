@@ -1,27 +1,23 @@
 
 import vsfs, os
 
-def CreateMultipleFilesHacky():
+def CreateMultipleFiles():
 	fs = vsfs.Vsfs("test.vsfs", 1)
-	#fs._create_inode(0, 1)
 	for i in range(30):
-		fs._create_file("test{0}".format(i), 7000, 0)
+		fi = fs.open("test{0}".format(i),"w")
 	found = fs.listdir("/")
 	if len(found) != 30:
 		os.unlink("test.vsfs")
 		raise Exception("Wrong number of files")
 	for i in range(30):
-		if 	"test{0}".format(i) not in found:
+		if "test{0}".format(i) not in found:
 			os.unlink("test.vsfs")
 			raise Exception("Missing file")
 	os.unlink("test.vsfs")
 	return 1
 
-def ReadAndWriteHacky():
+def ReadAndWrite():
 	fs = vsfs.Vsfs("test.vsfs", 1)
-	#fs._create_inode(0, 1)
-	#for i in range(30):
-	#	fs._create_file("test{0}".format(i), 7000, 0)
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -64,6 +60,6 @@ def ReadAndWriteHacky():
 	return 1
 
 if __name__=="__main__":
-	print "CreateMultipleFiles test", CreateMultipleFilesHacky()
-	print "ReadAndWrite test", ReadAndWriteHacky()
+	print "CreateMultipleFiles test", CreateMultipleFiles()
+	print "ReadAndWrite test", ReadAndWrite()
 
