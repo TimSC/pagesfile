@@ -351,7 +351,7 @@ class Vsfs(object):
 		self._write_folder_block(freeFolderBlockNum, freeFolderBlockData)
 
 	def _create_file(self, filename, fileSize, parentFolderInodeNum):
-		print "_create_file"
+		print "_create_file", filename, fileSize, parentFolderInodeNum
 
 		encodedFilename = filename.encode("utf-8")
 		if len(encodedFilename) > self.maxFilenameLen:
