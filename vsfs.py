@@ -65,7 +65,7 @@ class Vsfs(object):
 		maxFileSize = 10*1024, maxFilenameLen = 256):
 		
 		createFile = False
-		self.debugMode = True
+		self.debugMode = False
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
 		self.inodeMetaStruct = struct.Struct(">BQ") #Type, size
 		self.inodePtrStruct = struct.Struct(">Q")
@@ -240,7 +240,7 @@ class Vsfs(object):
 		return meta, dataPtrs
 
 	def _update_inode(self, inodeNum, meta, ptrs):
-		print "_update_inode", meta
+		#print "_update_inode", meta
 		inodeEntryOffset = self.inodeEntrySize * inodeNum
 
 		inodeEntryPos = inodeEntryOffset + self.inodeTableStart * self.blockSize
@@ -264,7 +264,7 @@ class Vsfs(object):
 	def _read_folder_block(self, blkNum):
 
 		out = []
-		self.handle.seek(self.dataStart + blkNum * self.blockSize)
+		self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 		folderBlockData = self.handle.read(self.blockSize)
 		numberOfEntries = self.blockSize / self.folderEntrySize
 		for entryNum in range(numberOfEntries):
@@ -278,7 +278,7 @@ class Vsfs(object):
 
 	def _write_folder_block(self, blkNum, inodeList):
 
-		self.handle.seek(self.dataStart + blkNum * self.blockSize)
+		self.handle.seek((self.dataStart + blkNum) * self.blockSize)
 		numberOfEntries = self.blockSize / self.folderEntrySize
 		for entry in inodeList:
 
@@ -315,12 +315,6 @@ class Vsfs(object):
 			#Try to allocate more space to keep folder data
 			allocatedBlocks = self._allocate_space_to_inode(parentFolderInodeNum, 1)
 
-			if self.debugMode:
-				#Debugging tests
-				testMeta, testPtrs = self._load_inode(parentFolderInodeNum)
-				if testMeta['inodeType'] != 1:
-					raise RuntimeException("Folder inode type corrupted")
-
 			#Clear new blocks
 			for blkNum in allocatedBlocks:
 				self.handle.seek((self.dataStart + blkNum) * self.blockSize)
@@ -334,7 +328,7 @@ class Vsfs(object):
 			#Debugging tests
 			testMeta, testPtrs = self._load_inode(parentFolderInodeNum)
 			if testMeta['inodeType'] != 1:
-				raise RuntimeException("Folder inode type corrupted")
+				raise RuntimeError("Folder inode type corrupted")
 
 		if freeFolderBlockNum is None:
 			return 0, freeFolderBlockNum, freeFolderBlockData, freeEntryNum
@@ -342,7 +336,7 @@ class Vsfs(object):
 
 	def _add_inode_to_folder(self, filename, childInodeNum, parentFolderInodeNum, \
 		freeFolderBlockNum, freeFolderBlockData, freeEntryNum):
-
+	
 		if freeFolderBlockData[freeEntryNum][0] != 0:
 			raise RuntimeError("Internal error, expected inuse flag to be zero")
 		freeFolderBlockData[freeEntryNum][0] = 1
@@ -351,7 +345,7 @@ class Vsfs(object):
 		self._write_folder_block(freeFolderBlockNum, freeFolderBlockData)
 
 	def _create_file(self, filename, fileSize, parentFolderInodeNum):
-		print "_create_file", filename, fileSize, parentFolderInodeNum
+		#print "_create_file", filename, fileSize, parentFolderInodeNum
 
 		encodedFilename = filename.encode("utf-8")
 		if len(encodedFilename) > self.maxFilenameLen:
@@ -451,7 +445,7 @@ class Vsfs(object):
 		return freeBlocks
 
 	def _create_folder(self, foldername, inFolderInode):
-		print "_create_folder"
+		#print "_create_folder"
 
 		if foldername == None:
 			if inFolderInode != None:
