@@ -65,7 +65,7 @@ class Vsfs(object):
 	#by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau, Chapter 40
 	#http://pages.cs.wisc.edu/~remzi/OSTEP/file-implementation.pdf
 
-	def __init__(self, fi, initFs = 0, maxFiles = 1000000, dataSize = 4096 * 4096, blockSize = 4096,
+	def __init__(self, fi, initFs = 0, maxFiles = 1000000, deviceSize = 10 * 4096 * 4096, blockSize = 4096,
 		maxFileSize = 10*1024, maxFilenameLen = 256):
 		
 		createFile = False
@@ -88,37 +88,43 @@ class Vsfs(object):
 			self.haveFileOwnership = False
 
 		if createFile or initFs:
-			self.maxFiles = maxFiles
-			self.dataSize = dataSize
+			self.deviceSize = deviceSize
 			self.blockSize = blockSize
 			self.maxFilenameLen = maxFilenameLen
+			self.maxFileSize = maxFileSize
 
-			self.numInodePointers = int(math.ceil(float(maxFileSize) / blockSize))
+			#Determine size of structures
+			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / blockSize))
 			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
-
-			self.inodeBitmapStart = 1 #Starting block num
 			self.sizeBlocksInodeBitmap = int(math.ceil(math.ceil(maxFiles / 8.) / blockSize))
+			self.sizeDataBlocksPlanned = int(math.ceil(float(deviceSize) / blockSize)) #Blocks to contain actual data
+			self.sizeBlocksDataBitmap = int(math.ceil(math.ceil(float(self.sizeDataBlocksPlanned) / 8.) / blockSize)) #Blocks to contain data bitmap
+			inodeTableSizeBytes = self.inodeEntrySize * maxFiles
+			self.sizeInodeTableBlocks = int(math.ceil(float(inodeTableSizeBytes) / blockSize))
+
+			#Detemine layout of file system
+			self.inodeBitmapStart = 1 #Starting block num
 			self.dataBitmapStart = self.inodeBitmapStart + self.sizeBlocksInodeBitmap #Block num
-			self.sizeDataBlocks = int(math.ceil(float(dataSize) / blockSize)) #Blocks to contain actual data
-			self.sizeBlocksDataBitmap = int(math.ceil(math.ceil(float(self.sizeDataBlocks) / 8.) / blockSize)) #Blocks to contain data bitmap
-
 			self.inodeTableStart = self.dataBitmapStart + self.sizeBlocksDataBitmap #Block num
-			self.inodeTableSizeBytes = self.inodeEntrySize * maxFiles
-			self.sizeInodeTableBlocks = int(math.ceil(float(self.inodeTableSizeBytes) / blockSize))
-
 			self.dataStart = self.inodeTableStart + self.sizeInodeTableBlocks
+
+			#Allocate remaining space to user data
+			self.sizeDataBlocks = int(math.ceil(float(deviceSize) / blockSize)) - self.dataStart #Blocks to contain actual data
+			if self.sizeDataBlocks <= 0:
+				raise RuntimeError("No space for user data: try reducing maximum number of files")
 
 			self.folderEntrySize = self.folderEntryStruct.size + self.maxFilenameLen
 
 			self._init_superblock()
 			self._quick_format()
-			self._update_fs_data()
+			self._update_superblock_data()
 
 		else:
 			#Read settings
-			pass
-
-
+			self._read_superblock_data()
+			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / blockSize))
+			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
+			self.folderEntrySize = self.folderEntryStruct.size + self.maxFilenameLen
 
 
 	def __del__(self):
@@ -140,10 +146,14 @@ class Vsfs(object):
 		self.handle.seek(0)
 		self.handle.write("vsfs")
 
-	def _update_fs_data(self):
+	def _update_superblock_data(self):
 		self.handle.seek(4)
+
+		#Main parameters
 		self.handle.write(struct.pack(">Q", self.blockSize))
 		self.handle.write(struct.pack(">Q", self.maxFilenameLen))
+		self.handle.write(struct.pack(">Q", self.deviceSize))
+		self.handle.write(struct.pack(">Q", self.maxFileSize))
 
 		#Fundamental layout
 		self.handle.write(struct.pack(">Q", self.inodeBitmapStart))
@@ -157,7 +167,37 @@ class Vsfs(object):
 
 		self.handle.write(struct.pack(">Q", self.dataStart))
 		self.handle.write(struct.pack(">Q", self.sizeDataBlocks))
-		
+
+		#Check if we have not run out of the first block
+		currentPos = self.handle.tell()
+		if currentPos > self.blockSize:
+			raise RuntimeError("Superblock is bigger than specified block size")
+	
+	def _read_superblock_data(self):
+		self.handle.seek(0)
+		fsIdent = self.handle.read(4)
+		if fsIdent != "vsfs":
+			raise IOError("Unrecognised identifier for vsfs file system")
+
+		#Main parameters
+		self.blockSize = struct.unpack(">Q", self.handle.read(8))[0]
+		self.maxFilenameLen = struct.unpack(">Q", self.handle.read(8))[0]
+		self.deviceSize = struct.unpack(">Q", self.handle.read(8))[0]
+		self.maxFileSize = struct.unpack(">Q", self.handle.read(8))[0]
+
+		#Fundamental layout
+		self.inodeBitmapStart = struct.unpack(">Q", self.handle.read(8))[0]
+		self.sizeBlocksInodeBitmap = struct.unpack(">Q", self.handle.read(8))[0]
+
+		self.dataBitmapStart = struct.unpack(">Q", self.handle.read(8))[0]
+		self.sizeBlocksDataBitmap = struct.unpack(">Q", self.handle.read(8))[0]
+
+		self.inodeTableStart = struct.unpack(">Q", self.handle.read(8))[0]
+		self.sizeInodeTableBlocks = struct.unpack(">Q", self.handle.read(8))[0]
+
+		self.dataStart = struct.unpack(">Q", self.handle.read(8))[0]
+		self.sizeDataBlocks = struct.unpack(">Q", self.handle.read(8))[0]
+
 	def _quick_format(self):
 
 		#Format Inode bitmap
@@ -543,6 +583,7 @@ class VsfsFile(object):
 		self.meta, self.dataPtrs = self.parent._load_inode(fileInode)
 		self.cursor = 0
 		self.closed = False
+		self.backfillWithZeros = True
 		if self.mode != "r" and self.mode != "w":
 			raise ValueError("Only r and w modes implemented")
 
@@ -554,11 +595,20 @@ class VsfsFile(object):
 			raise IOError("File already closed")
 		if self.mode != "w":
 			raise RuntimeError("Not in write mode")
+		if self.cursor >= self.parent.maxFileSize:
+			raise IOError("Cursor beyond maximum file size")
 
 		numBlocksAlloc = len(self.dataPtrs)
 		writing = True
 		currentData = bytearray(data)
 		bytesWritten = 0
+
+		#Check if we need to backfill file up to cursor
+		if self.cursor > self.meta['fileSize'] and self.backfillWithZeros:
+			extraZerosSize = self.cursor - self.meta['fileSize']
+			zeros = bytearray("".join(['\x00' for i in range(extraZerosSize)]))
+			currentData = zeros + currentData
+			self.cursor = self.meta['fileSize']
 
 		while writing:			
 			inBlockNum = self.cursor / self.parent.blockSize
@@ -566,8 +616,15 @@ class VsfsFile(object):
 				#Use already allocated data blocks
 				posInBlock = self.cursor % self.parent.blockSize
 				bytesToBlockEnd = self.parent.blockSize - posInBlock
+				bytesToMaxFileSize = self.parent.maxFileSize - self.cursor					
 
-				datToWrite = currentData[:bytesToBlockEnd]
+				bytesToWrite = bytesToBlockEnd
+				if bytesToWrite > len(currentData):
+					bytesToWrite = len(currentData)
+				if bytesToWrite > bytesToMaxFileSize:
+					bytesToWrite = bytesToMaxFileSize
+
+				datToWrite = currentData[:bytesToWrite]
 				self.parent._write_to_data_block(self.dataPtrs[inBlockNum], posInBlock, datToWrite)
 				bytesWritten += len(datToWrite)
 				currentData = currentData[len(datToWrite):]
@@ -580,6 +637,9 @@ class VsfsFile(object):
 
 				if len(currentData) == 0:
 					writing = False
+
+				if self.cursor >= self.parent.maxFileSize:
+					raise IOError("Maximum file size reached")
 
 			else:
 				raise RuntimeError("Expanding file to additional blocks not implemented")
