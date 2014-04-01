@@ -12,9 +12,15 @@ if __name__=="__main__":
 	fi =  fs.open("test1","w")
 	print fi
 	print len(fi)
-	fi.write("foobar")
+	testStr = "".join([chr(i % 256) for i in range(6000)])
+
+	fi.write(testStr)
 	fi.close()
 
 	fi2 =  fs.open("test1","r")
-	print fi2.read(6)
+	testStr2 = fi2.read(8000)
+	count = 0
+	for a, b in zip(testStr, testStr2):
+		count += 1
+	print "correct", count
 	

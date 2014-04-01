@@ -606,7 +606,9 @@ class VsfsFile(object):
 				bytesToRead = bytesToBlockEnd
 				if readLen < bytesToRead:
 					bytesToRead = readLen
-				if readLen > bytesToFileEnd:
+				if bytesToRead > bytesToBlockEnd:
+					bytesToRead = bytesToBlockEnd
+				if bytesToRead > bytesToFileEnd:
 					 bytesToRead = bytesToFileEnd
 
 				tmpDat = self.parent._read_from_data_block(self.dataPtrs[inBlockNum], posInBlock, bytesToRead)
