@@ -1,4 +1,4 @@
-import struct, os, math
+import struct, os, math, stat
 
 #******************** Utility functions *********************
 
@@ -56,6 +56,22 @@ def FindLooseBlocks(dataBitmap, numBlocks, storageSize, preAllocateBlocksStart =
 				return freeBlocks
 
 	return freeBlocks
+
+class StatResult(object):
+	def __init__(self):
+		self.st_mode=0
+		self.st_ino=0
+		self.st_dev=0
+		self.st_nlink=0
+		self.st_uid=0
+		self.st_gid=0
+		self.st_size=0
+		self.st_atime=0
+		self.st_mtime=0
+		self.st_ctime=0
+
+	def __str__(self):
+		return "StatResult"+str(self.__dict__)
 
 #******************* Very simple file system *******************
 
@@ -592,19 +608,16 @@ class Vsfs(object):
 			del self.inodeMeta[handle.fileInode]
 			del self.inodeDataBlocks[handle.fileInode]
 
-	def open(self, filename, mode):
+	def _filename_to_inode(self, filename):
 
 		pathSplit = os.path.split(filename)
-		if len(pathSplit[0]) > 0:
-			raise Exception("Folders not implemented yet")
 
 		#Get folder inode
 		folderMeta, folderPtrs = self._load_inode(0)
 		if folderMeta['inodeType'] != 1:
-			raise ValueError("Not a folder")	
+			raise ValueError("Not a folder")
 
 		#For each data block
-
 		for ptr in folderPtrs:
 			if ptr is None:
 				continue
@@ -612,8 +625,8 @@ class Vsfs(object):
 			for entry in folderBlock:
 				if entry[0] == 0: 
 					continue #Not in use
-				if entry[2] == filename:
-					fileInode = entry[1]
+				if entry[2] == pathSplit[1]:
+					return entry[1]
 
 					if fileInode not in self.inodeMeta:
 						fiMeta, fiDataPtrs = self._load_inode(fileInode)
@@ -632,6 +645,32 @@ class Vsfs(object):
 					self.handles[fileInode].append(handle)
 
 					return handle
+
+		#File not found
+		return None
+
+	def open(self, filename, mode="r"):
+
+		fileInode = self._filename_to_inode(filename)
+		if fileInode is not None:
+
+			if fileInode not in self.inodeMeta:
+				fiMeta, fiDataPtrs = self._load_inode(fileInode)
+				fiUsedDataPtrs = []
+				for ptr in fiDataPtrs:
+					if ptr is not None:
+						fiUsedDataPtrs.append(ptr)
+
+				self.inodeMeta[fileInode] = fiMeta
+				self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
+
+			handle = VsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
+
+			if fileInode not in self.handles:
+				self.handles[fileInode] = []
+			self.handles[fileInode].append(handle)
+
+			return handle
 
 		if mode == "r":
 			raise IOError("File not found")
@@ -675,6 +714,26 @@ class Vsfs(object):
 					continue #Not in use
 				out.append(entry[2])
 		return out
+
+	def stat(self, path):
+
+		if path == "/":
+			result = StatResult()
+			result.st_mode = stat.S_IFDIR | 0755
+			result.st_nlink = 2
+			return result
+
+		fileInode = self._filename_to_inode(path)
+		if fileInode is not None:
+			fiMeta, fiDataPtrs = self._load_inode(fileInode)
+
+			result = StatResult()
+			result.st_mode = stat.S_IFREG | 0444
+			result.st_nlink = 1
+			result.st_size = fiMeta['fileSize']
+			return result
+		
+		raise OSError("No such file or directory: '{0}'".format(path))
 
 #**************** File class *******************
 

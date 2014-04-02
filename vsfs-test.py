@@ -81,10 +81,18 @@ def FileHandleSync():
 
 	return 1
 
+def FileStat():
+	fs = vsfs.Vsfs("test.vsfs", 1)
+	print fs.stat("/")
+	fi = fs.open("test.txt", "w")
+	fi.write("foobar")
+	fi.close()
+	print fs.stat("/foo/test.txt")
+
 if __name__=="__main__":
 	print "CreateMultipleFiles test", CreateMultipleFiles()
 	print "ReadAndWrite test", ReadAndWrite()
 	print "FileHandleSync test", FileHandleSync()
 
-	fs = vsfs.Vsfs("test.vsfs", 1)
 
+	
