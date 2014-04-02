@@ -660,8 +660,9 @@ class Vsfs(object):
 			raise IOError("File not found")
 
 		#Create new file
+		pathSplit = os.path.split(filename)
 		parentFolder = 0
-		fileInode = self._create_file(filename, 0, parentFolder)
+		fileInode = self._create_file(pathSplit[1], 0, parentFolder)
 
 		if fileInode in self.inodeMeta:
 			raise RuntimeError("Internal error, old meta data retained")

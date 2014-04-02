@@ -47,16 +47,20 @@ class VsfsFuse(Fuse):
 	def open(self, path, flags):
 		print "open", path, flags
 
+		mode = "r"
+		if flags & os.O_RDONLY:
+			mode = "r"
+		if flags & os.O_WRONLY:
+			mode = "w"
+		if flags & os.O_RDWR:
+			mode = "rw"
+
 		if path not in self.handles:
 			try:
-				handle = self.fs.open(path, "r")
+				handle = self.fs.open(path, mode)
 			except OSError:
 				return -errno.ENOENT
 			self.handles[path] = handle
-
-		accmode = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
-		if (flags & accmode) != os.O_RDONLY:
-			return -errno.EACCES
 
 	def read(self, path, size, offset):
 		print "read", path, size, offset
@@ -68,6 +72,32 @@ class VsfsFuse(Fuse):
 
 		handle.seek(offset)
 		return handle.read(size)
+
+	def mknod(self, path, mode, dev):
+		print "mknod", path, mode, dev
+		handle = self.fs.open(path, "w")
+		handle.write("stuff")
+		print handle
+		del handle
+		return 0
+
+	def unlink(self, path):
+		print "unlink", path
+		self.fs.rm(path)
+		return 0
+
+	def release(self, path, flags):
+		print "release", path, flags
+		if path not in self.handles:
+			print "Expected path to be already open"
+		del self.handles[path]
+		return 0
+
+	def flush(self, path):
+		print "flush", path
+
+	def setattr(self, path, attr):
+		print "setattr", path, attr
 
 def main():
 	fs = vsfs.Vsfs("test.vsfs")
