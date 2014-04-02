@@ -81,6 +81,26 @@ def FileHandleSync():
 
 	return 1
 
+def CreateAndDeleteFile():
+	fs = vsfs.Vsfs("test.vsfs", 1)
+
+	fi =  fs.open("test1","w")
+	if len(fi) != 0:
+		raise Exception("Wrong file length")
+
+	fi.write("foobar")
+
+	fi.close()
+	del fi
+	if len(fs.listdir("/")) != 1:
+		raise Exception("Wrong number of files")
+
+	fs.rm("test1")
+
+	if len(fs.listdir("/")) != 0:
+		raise Exception("Wrong number of files")
+	return 1
+
 def FileStat():
 	fs = vsfs.Vsfs("test.vsfs", 1)
 	print fs.stat("/")
@@ -93,6 +113,5 @@ if __name__=="__main__":
 	print "CreateMultipleFiles test", CreateMultipleFiles()
 	print "ReadAndWrite test", ReadAndWrite()
 	print "FileHandleSync test", FileHandleSync()
+	print "CreateAndDeleteFile test", CreateAndDeleteFile()
 
-
-	

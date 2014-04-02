@@ -485,6 +485,8 @@ class Vsfs(object):
 		if len(freePtrNums) < blocksToAdd:
 			raise RuntimeError("Insufficient pointer space")
 
+		#TODO Optimise by preallocating continuous blocks
+
 		#Get a free block
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
@@ -628,24 +630,6 @@ class Vsfs(object):
 				if entry[2] == pathSplit[1]:
 					return entry[1]
 
-					if fileInode not in self.inodeMeta:
-						fiMeta, fiDataPtrs = self._load_inode(fileInode)
-						fiUsedDataPtrs = []
-						for ptr in fiDataPtrs:
-							if ptr is not None:
-								fiUsedDataPtrs.append(ptr)
-
-						self.inodeMeta[fileInode] = fiMeta
-						self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
-
-					handle = VsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
-
-					if fileInode not in self.handles:
-						self.handles[fileInode] = []
-					self.handles[fileInode].append(handle)
-
-					return handle
-
 		#File not found
 		return None
 
@@ -734,6 +718,92 @@ class Vsfs(object):
 			return result
 		
 		raise OSError("No such file or directory: '{0}'".format(path))
+
+	def _remove_inode_from_folder(self, inodeToRemove, parentInode):
+		#Get folder inode
+		folderMeta, folderPtrs = self._load_inode(parentInode)
+		if folderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")
+
+		#For each data block
+		out = []
+		foundInode = False
+		for ptr in folderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+
+			for entry in folderBlock:
+				if entry[0] == 0: 
+					continue #Not in use
+				if entry[1] == inodeToRemove:
+					foundInode = True
+					entry[0] = 0
+				if foundInode:
+					break
+
+			if foundInode:
+				self._write_folder_block(ptr, folderBlock)
+				break
+
+		if foundInode is False:
+			raise RuntimeError("Inode missing from parent folder")
+
+	def rm(self, path):
+		fileInode = self._filename_to_inode(path)
+		if fileInode is None:
+			raise OSError("No such file or directory: '{0}'".format(path))
+
+		if fileInode in self.handles:
+			raise OSError("File currently open")
+
+		if fileInode == 0:
+			raise OSError("Root folder cannot be deleted")
+
+		meta, ptrs = self._load_inode(fileInode)
+
+		if meta['inodeType'] == 1:
+			raise OSError("Cannot rm a folder")
+
+		if meta['inodeType'] != 2:
+			raise OSError("Inode not a file")
+
+		#Update parent folder
+		parentFolder = 0 #TODO update for multiple folders
+		self._remove_inode_from_folder(fileInode, 0)
+
+		#Free data blocks in bitmap
+		for i, blk in enumerate(ptrs):
+			if blk is None: continue #Unused pointer
+
+			#Update data bitmap
+			bitmapByte = blk / 8
+			bitmapByteOffset = blk % 8
+		
+			filePos = self.dataBitmapStart * self.blockSize + bitmapByte
+			#byteVal = dataBitmap[bitmapByte]
+			self.handle.seek(filePos)
+			byteVal = ord(self.handle.read(1))
+			bitVal = (byteVal & (0x01 << bitmapByteOffset)) != 0
+			if not bitVal and self.debugMode:
+				raise RuntimeError("Interal error, bitval should be one")
+			updatedByteVal = byteVal & (~(0x01 << bitmapByteOffset))
+			self.handle.seek(filePos)
+			self.handle.write(chr(updatedByteVal))
+			#dataBitmap[bitmapByte] = chr(updatedByteVal)
+
+		#Free inode in bitmap
+		filePos = self.inodeBitmapStart * self.blockSize + bitmapByte
+		self.handle.seek(filePos)
+		bitmapVal = self.handle.read(1)
+		bitmapVal = ord(bitmapVal[0]) #Convert to number
+		inodeExists = (bitmapVal & (0x01 << bitmapByteOffset)) != 0
+		if not inodeExists and self.debugMode:
+			raise RuntimeError("Inode should already exist")
+
+		updatedBitmapVal = bitmapVal & (~(0x01 << bitmapByteOffset))
+		self.handle.seek(filePos)
+		bitmapVal = self.handle.write(chr(updatedBitmapVal))
 
 #**************** File class *******************
 
