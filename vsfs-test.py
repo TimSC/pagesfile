@@ -108,8 +108,9 @@ def CreateUseAndDeleteFolder():
 		raise Exception("Failed to create folder")
 
 	fs.rmdir("/foo")
-	if len(fs.listdir("/")) != 1:
+	if len(fs.listdir("/")) != 0:
 		raise Exception("Failed to delete folder")
+	return 1
 
 def FileStat():
 	fs = vsfs.Vsfs("test.vsfs", 1)

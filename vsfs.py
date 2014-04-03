@@ -785,30 +785,32 @@ class Vsfs(object):
 		if foundInode is False:
 			raise RuntimeError("Inode missing from parent folder")
 
-	def rm(self, path):
-		fileInode = self._filename_to_inode(path)
-		if fileInode is None:
-			raise OSError("No such file or directory: '{0}'".format(path))
+	def _remove_folder(self, folderInode, parentInode):
 
-		if fileInode in self.handles:
-			raise OSError("File currently open")
+		if folderInode == 0:
+			raise OSError("Root folder may not be deleted")
 
-		if fileInode == 0:
-			raise OSError("Root folder cannot be deleted")
+		meta, ptrs = self._load_inode(folderInode)
 
-		meta, ptrs = self._load_inode(fileInode)
+		#Check file handle is not open inside this folder
+		#TODO
 
-		if meta['inodeType'] == 1:
-			raise OSError("Cannot rm a folder")
+		if meta['inodeType'] == 2:
+			raise OSError("Cannot rmdir a file")
 
-		if meta['inodeType'] != 2:
-			raise OSError("Inode not a file")
+		if meta['inodeType'] != 1:
+			raise OSError("Inode not a folder")
 
 		#Update parent folder
-		parentFolder = 0 #TODO update for multiple folders
-		self._remove_inode_from_folder(fileInode, 0)
-
+		self._remove_inode_from_folder(folderInode, parentInode)
+		
 		#Free data blocks in bitmap
+		self._free_data_blocks_in_bitmap(ptrs)
+
+		#Free inode in bitmap
+		self._free_inode_in_bitmap(folderInode)
+
+	def _free_data_blocks_in_bitmap(self, ptrs):
 		for i, blk in enumerate(ptrs):
 			if blk is None: continue #Unused pointer
 
@@ -828,7 +830,10 @@ class Vsfs(object):
 			self.handle.write(chr(updatedByteVal))
 			#dataBitmap[bitmapByte] = chr(updatedByteVal)
 
-		#Free inode in bitmap
+	def _free_inode_in_bitmap(self, inodeNum):
+		bitmapByte = inodeNum / 8
+		bitmapByteOffset = inodeNum % 8
+
 		filePos = self.inodeBitmapStart * self.blockSize + bitmapByte
 		self.handle.seek(filePos)
 		bitmapVal = self.handle.read(1)
@@ -841,6 +846,37 @@ class Vsfs(object):
 		self.handle.seek(filePos)
 		bitmapVal = self.handle.write(chr(updatedBitmapVal))
 
+	def rm(self, path):
+		fileInode = self._filename_to_inode(path)
+		pathSplit = os.path.split(path)
+		parentFolderInode = self._filename_to_inode(pathSplit[0])
+
+		if fileInode is None:
+			raise OSError("No such file or directory: '{0}'".format(path))
+
+		if parentFolderInode is None:
+			raise OSError("Internal error: could not find parent inode")
+
+		if fileInode in self.handles:
+			raise OSError("File currently open")
+
+		meta, ptrs = self._load_inode(fileInode)
+
+		if meta['inodeType'] == 1:
+			raise OSError("Cannot rm a folder")
+
+		if meta['inodeType'] != 2:
+			raise OSError("Inode not a file")
+
+		#Update parent folder
+		self._remove_inode_from_folder(fileInode, parentFolderInode)
+
+		#Free data blocks in bitmap
+		self._free_data_blocks_in_bitmap(ptrs)
+
+		#Free inode in bitmap
+		self._free_inode_in_bitmap(fileInode)
+
 	def mkdir(self, path, mode):
 		pathSplit = os.path.split(path)
 
@@ -852,7 +888,18 @@ class Vsfs(object):
 		self._create_folder(pathSplit[1], parentInode)
 
 	def rmdir(self, path):
-		raise RuntimeError("Not implmented")
+		folderInode = self._filename_to_inode(path)
+		if folderInode is None:
+			raise RuntimeError("Folder not found")
+
+		pathSplit = os.path.split(path)
+		parentFolderInode = self._filename_to_inode(pathSplit[0])
+		
+		if parentFolderInode is None:
+			raise OSError("Internal error: could not find parent folder")
+
+		#Remove inode for folder
+		self._remove_folder(folderInode, parentFolderInode)
 	
 #**************** File class *******************
 
