@@ -1107,6 +1107,9 @@ class Qsfs(object):
 #**************** File class *******************
 
 class QsfsFile(object):
+	#Do not construct this directly. Instead, call the open method
+	#from the file system class.
+
 	def __init__(self, fileInode, parent, mode, fiMeta, fiUsedDataPtrs):
 		self.parent = parent
 		self.fileInode = fileInode
