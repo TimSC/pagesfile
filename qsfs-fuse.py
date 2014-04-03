@@ -225,11 +225,11 @@ class VsfsFuse(Fuse):
 
 	def fsinit(self, *args):
 		print "fsinit", args
-		return -errno.ENOSYS
+		return 0
 
 	def fsdestroy(self, *args):
 		print "fsdestroy", args
-		return -errno.ENOSYS
+		return 0
 
 def main():
 	#fs = qsfs.Qsfs("test.qsfs")
