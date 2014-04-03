@@ -134,7 +134,7 @@ class VsfsFuse(Fuse):
 		return -errno.ENOSYS
 
 	def mkdir(self, path, mode):
-		print '*** mkdir', path, oct(mode)
+		print 'mkdir', path, oct(mode)
 		self.fs.mkdir(path, mode)
 		return 0
 
@@ -149,7 +149,7 @@ class VsfsFuse(Fuse):
 	def rmdir(self, path):
 		print '*** rmdir', path
 		self.fs.rmdir(path)
-		return -errno.ENOSYS
+		return 0
 
 	def statfs(self):
 		print '*** statfs'

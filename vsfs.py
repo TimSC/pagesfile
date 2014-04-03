@@ -741,23 +741,26 @@ class Vsfs(object):
 
 	def stat(self, path):
 
-		if path == "/":
-			result = StatResult()
-			result.st_mode = stat.S_IFDIR | 0755
-			result.st_nlink = 2
-			return result
-
 		fileInode = self._filename_to_inode(path)
-		if fileInode is not None:
-			fiMeta, fiDataPtrs = self._load_inode(fileInode)
+		if fileInode is None:
+			raise OSError("No such file or directory: '{0}'".format(path))
 
+		fiMeta, fiDataPtrs = self._load_inode(fileInode)
+		if fiMeta['inodeType'] == 2:
+			#File
 			result = StatResult()
 			result.st_mode = stat.S_IFREG | 0444
 			result.st_nlink = 1
 			result.st_size = fiMeta['fileSize']
 			return result
-		
-		raise OSError("No such file or directory: '{0}'".format(path))
+		if fiMeta['inodeType'] == 1:
+			#Folder
+			result = StatResult()
+			result.st_mode = stat.S_IFDIR | 0755
+			result.st_nlink = 2
+			return result
+
+		raise OSError("Unknown inode code: '{0}'".format(fiMeta['inodeType']))
 
 	def _remove_inode_from_folder(self, inodeToRemove, parentInode):
 		#Get folder inode
