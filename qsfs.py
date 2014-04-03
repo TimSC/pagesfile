@@ -844,6 +844,42 @@ class Qsfs(object):
 			self.handle.write(chr(updatedByteVal))
 			#dataBitmap[bitmapByte] = chr(updatedByteVal)
 
+	def _rename_inode(self, inodeToRename, parentFolderInode, newName):
+
+		#Get folder inode
+		folderMeta, folderPtrs = self._load_inode(parentFolderInode)
+		if folderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")	
+
+		if len(newName) == 0:
+			raise RuntimeError("Zero length filenames are not allowed")
+
+		encodedFilename = newName.encode('utf-8')
+		if len(encodedFilename) > self.maxFilenameLen:
+			raise RuntimeError("Filename is too long when utf-8 encoded")
+
+		#For each data block
+		found = False
+		for ptr in folderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+			for entry in folderBlock:
+				if entry[0] == 0:
+					continue #Not in use
+				if entry[1] == inodeToRename:
+					found = True
+					entry[2] = newName
+				if found: 
+					break
+
+			if found: 
+				self._write_folder_block(ptr, folderBlock)
+				break
+
+		if not found:
+			raise RuntimeError("Internal error, did not find entry during inode renaming")
+
 	def _free_inode_in_bitmap(self, inodeNum):
 		bitmapByte = inodeNum / 8
 		bitmapByteOffset = inodeNum % 8
@@ -904,7 +940,7 @@ class Qsfs(object):
 	def rmdir(self, path):
 		folderInode = self._filename_to_inode(path)
 		if folderInode is None:
-			raise RuntimeError("Folder not found")
+			raise OSError("Folder not found")
 
 		pathSplit = os.path.split(path)
 		parentFolderInode = self._filename_to_inode(pathSplit[0])
@@ -915,6 +951,26 @@ class Qsfs(object):
 		#Remove inode for folder
 		self._remove_folder(folderInode, parentFolderInode)
 	
+	def rename(self, oldName, newName):
+		fileInode = self._filename_to_inode(oldName)
+		if fileInode is None:
+			raise OSError("File not found")
+
+		oldPathSplit = os.path.split(oldName)
+		newPathSplit = os.path.split(newName)
+
+		if oldPathSplit[0] != newPathSplit[0]:
+			raise OSError("Renaming file is not allowed to move file")
+
+		oldParentInode = self._filename_to_inode(oldPathSplit[0])
+		if oldParentInode is None:
+			raise OSError("Internal error: could not find parent folder")
+
+		self._rename_inode(fileInode, oldParentInode, newPathSplit[1])
+	
+	def mv(self, oldPath, newPath):
+		pass
+
 #**************** File class *******************
 
 class QsfsFile(object):

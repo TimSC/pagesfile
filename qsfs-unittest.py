@@ -173,6 +173,23 @@ def DeleteInUseThings():
 	fi.close()
 	return 1
 
+def RenameFile():
+	fs = qsfs.Qsfs("test.qsfs", 1)
+
+	fi = fs.open("test.txt", "w")
+	fi.write("foobar")
+	fi.close()
+
+	fs.rename("/test.txt", "/stuff.txt")
+
+	d = fs.listdir("/")
+	if len(d)!=1:
+		raise Exception("Wrong number of files")	
+	if d[0]!="stuff.txt":
+		raise Exception("Rename failed")	
+
+	return 1
+
 def FileStat():
 	fs = qsfs.Qsfs("test.qsfs", 1)
 	print fs.stat("/")
@@ -180,8 +197,9 @@ def FileStat():
 	fi.write("foobar")
 	fi.close()
 	print fs.stat("/foo/test.txt")
+	return 1
 
-if __name__=="__main__":
+def UnitTests():
 	print "CreateMultipleFiles test", CreateMultipleFiles()
 	print "ReadAndWrite test", ReadAndWrite()
 	print "FileHandleSync test", FileHandleSync()
@@ -189,4 +207,9 @@ if __name__=="__main__":
 	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder()
 	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder()
 	print "DeleteInUseThings test", DeleteInUseThings()
+	print "RenameFile test", RenameFile()
+
+if __name__=="__main__":
+	UnitTests()	
+	
 

@@ -144,7 +144,8 @@ class VsfsFuse(Fuse):
 
 	def rename(self, oldPath, newPath):
 		print 'rename', oldPath, newPath
-		return -errno.ENOSYS
+		self.fs.rename(oldPath, newPath)
+		return 0
 
 	def rmdir(self, path):
 		print 'rmdir', path
