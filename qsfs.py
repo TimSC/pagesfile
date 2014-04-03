@@ -922,7 +922,7 @@ class Qsfs(object):
 		#Free inode in bitmap
 		self._free_inode_in_bitmap(fileInode)
 
-	def mkdir(self, path, mode):
+	def mkdir(self, path, mode = int('0777', 8)):
 		pathSplit = os.path.split(path)
 
 		parentInode = self._filename_to_inode(pathSplit[0])
@@ -1001,7 +1001,7 @@ class Qsfs(object):
 		result.f_namemax = self.maxFilenameLen 				# maximum filename length
 		return result
 	
-	def rename(self, oldName, newName):
+	def _rename(self, oldName, newName):
 		fileInode = self._filename_to_inode(oldName)
 		if fileInode is None:
 			raise OSError("File not found")
@@ -1018,16 +1018,91 @@ class Qsfs(object):
 
 		self._rename_inode(fileInode, oldParentInode, newPathSplit[1])
 	
+	def _transfer_inode_to_folder(self, inodeToMove, oldParentInode, newParentInode, newName):
+		#Get folder inode
+		oldFolderMeta, oldFolderPtrs = self._load_inode(oldParentInode)
+		if oldFolderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")
+
+		newFolderMeta, newFolderPtrs = self._load_inode(newParentInode)
+		if newFolderMeta['inodeType'] != 1:
+			raise ValueError("Not a folder")
+
+		if len(newName) == 0:
+			raise RuntimeError("Zero length filenames are not allowed")
+
+		encodedFilename = newName.encode('utf-8')
+		if len(encodedFilename) > self.maxFilenameLen:
+			raise RuntimeError("Filename is too long when utf-8 encoded")
+
+		#Check new folder has space for an extra inode
+		#TODO
+		found = False
+		for ptr in newFolderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+			for entry in folderBlock:
+				if entry[0] == 0: #Not in use
+					found = True
+					entry[0] = 1
+					entry[1] = inodeToMove
+					entry[2] = encodedFilename
+				if found: 
+					break
+
+			if found: 
+				self._write_folder_block(ptr, folderBlock)
+				break
+	
+		if not found:
+			raise RuntimeError("No free space in destination folder for an extra inode")
+
+		#Remove from old folder
+		found = False
+		for ptr in oldFolderPtrs:
+			if ptr is None:
+				continue
+			folderBlock = self._read_folder_block(ptr)
+			for entry in folderBlock:
+				if entry[0] == 0:
+					continue #Not in use
+				if entry[1] == inodeToMove:
+					found = True
+					entry[0] = 0 #Set to free
+				if found: 
+					break
+
+			if found: 
+				self._write_folder_block(ptr, folderBlock)
+				break
+
+		if not found:
+			raise RuntimeError("Internal error, did not find entry during inode renaming")
+
 	def mv(self, oldPath, newPath):
 		#Detect a simple rename
 		oldPathSplit = os.path.split(oldPath)
 		newPathSplit = os.path.split(newPath)
 		if oldPathSplit[0] == newPathSplit[0]:
-			self.rename(oldPath, newPath)
+			self._rename(oldPath, newPath)
 			return
 
-		#True moving of files is not supported
-		raise RuntimeError("Not implemented")
+		#True moving of a file
+		fileInode = self._filename_to_inode(oldPath)
+		if fileInode is None:
+			raise OSError("File not found")
+
+		oldParentInode = self._filename_to_inode(oldPathSplit[0])
+		if oldParentInode is None:
+			raise OSError("Internal error: could not find parent folder")
+		
+		newParentInode = self._filename_to_inode(newPathSplit[0])
+		if newParentInode is None:
+			raise RuntimeError("Destination folder not found")
+
+		self._transfer_inode_to_folder(fileInode, oldParentInode, newParentInode, newPathSplit[1])
+
 
 #**************** File class *******************
 

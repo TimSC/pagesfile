@@ -180,11 +180,35 @@ def RenameFile():
 	fi.write("foobar")
 	fi.close()
 
-	fs.rename("/test.txt", "/stuff.txt")
+	fs.mv("/test.txt", "/stuff.txt")
 
 	d = fs.listdir("/")
 	if len(d)!=1:
 		raise Exception("Wrong number of files")	
+	if d[0]!="stuff.txt":
+		raise Exception("Rename failed")	
+
+	return 1
+
+def MoveFile():
+	fs = qsfs.Qsfs("test.qsfs", 1)
+
+	fi = fs.open("test.txt", "w")
+	fi.write("foobar")
+	fi.close()
+
+	fs.mkdir("/foo")
+
+	fs.mv("/test.txt", "/foo/stuff.txt")
+
+	d = fs.listdir("/")
+	if len(d)!=1:
+		raise Exception("Wrong number of files: {0}".format(len(d)))	
+
+	d = fs.listdir("/foo")
+	if len(d)!=1:
+		raise Exception("Wrong number of files: {0}".format(len(d)))	
+
 	if d[0]!="stuff.txt":
 		raise Exception("Rename failed")	
 
@@ -208,6 +232,7 @@ def UnitTests():
 	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder()
 	print "DeleteInUseThings test", DeleteInUseThings()
 	print "RenameFile test", RenameFile()
+	print "MoveFile test", MoveFile()
 
 if __name__=="__main__":
 	UnitTests()	
