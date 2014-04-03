@@ -96,8 +96,60 @@ class VsfsFuse(Fuse):
 	def flush(self, path):
 		print "flush", path
 
-	def setattr(self, path, attr):
-		print "setattr", path, attr
+	def utimens(self, path, accessTime, modTime):
+		print "utimens", path, accessTime, modTime
+
+	def mythread ( self ):
+		print '*** mythread'
+		return -errno.ENOSYS
+
+	def chmod ( self, path, mode ):
+		print '*** chmod', path, oct(mode)
+		return -errno.ENOSYS
+
+	def chown ( self, path, uid, gid ):
+		print '*** chown', path, uid, gid
+		return -errno.ENOSYS
+
+	def fsync ( self, path, isFsyncFile ):
+		print '*** fsync', path, isFsyncFile
+		return -errno.ENOSYS
+
+	def link ( self, targetPath, linkPath ):
+		print '*** link', targetPath, linkPath
+		return -errno.ENOSYS
+
+	def mkdir ( self, path, mode ):
+		print '*** mkdir', path, oct(mode)
+		return -errno.ENOSYS
+
+	def readlink ( self, path ):
+		print '*** readlink', path
+		return -errno.ENOSYS
+
+	def rename ( self, oldPath, newPath ):
+		print '*** rename', oldPath, newPath
+		return -errno.ENOSYS
+
+	def rmdir ( self, path ):
+		print '*** rmdir', path
+		return -errno.ENOSYS
+
+	def statfs ( self ):
+		print '*** statfs'
+		return -errno.ENOSYS
+
+	def symlink ( self, targetPath, linkPath ):
+		print '*** symlink', targetPath, linkPath
+		return -errno.ENOSYS
+
+	def truncate ( self, path, size ):
+		print '*** truncate', path, size
+		return -errno.ENOSYS
+
+	def utime ( self, path, times ):
+		print '*** utime', path, times
+		return -errno.ENOSYS
 
 def main():
 	fs = vsfs.Vsfs("test.vsfs")
