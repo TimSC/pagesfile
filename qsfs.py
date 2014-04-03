@@ -615,9 +615,6 @@ class Qsfs(object):
 
 		self.handleCounts[handle.fileInode] -= 1
 
-		#Closed handles are no longer a concern for this class
-		handle._internal_close()
-
 		if self.handleCounts[handle.fileInode] == 0:
 			#Last handle for inode deleted, metadata can be dropped
 			del self.inodeMeta[handle.fileInode]
@@ -1251,14 +1248,10 @@ class QsfsFile(object):
 			raise IOError("File already closed")
 		return self.cursor
 
-	def _internal_close(self):
-		#Message back from file system object that object has been closed
-		self._closed = True
-
 	def close(self):
 		self.flush()
 		self.parent._close_event(self)
-		assert self._closed
+		self._closed = True
 
 	def flush(self):
 		if self._closed:
