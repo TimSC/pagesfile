@@ -22,6 +22,7 @@ class VsfsFuse(Fuse):
 		Fuse.__init__(self)
 		self.fs = fs
 		self.handles = {}
+		self.openCount = {}
 
 	def getattr(self, path):
 		print "getattr", path
@@ -61,6 +62,9 @@ class VsfsFuse(Fuse):
 			except OSError:
 				return -errno.ENOENT
 			self.handles[path] = handle
+		if path not in self.openCount:
+			self.openCount[path] = 0
+		self.openCount[path] += 1
 
 	def read(self, path, size, offset):
 		print "read", path, size, offset
@@ -90,11 +94,19 @@ class VsfsFuse(Fuse):
 		print "release", path, flags
 		if path not in self.handles:
 			print "Expected path to be already open"
-		del self.handles[path]
+		self.openCount[path] -= 1
+		if self.openCount[path] == 0:
+			del self.openCount[path]
+			del self.handles[path]
 		return 0
 
 	def flush(self, path):
+		
 		print "flush", path
+		if path not in self.handles:
+			return -errno.ENOENT
+		handle = self.handles[path]	
+		handle.flush()
 
 	def utimens(self, path, accessTime, modTime):
 		print "utimens", path, accessTime, modTime
