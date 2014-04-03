@@ -526,13 +526,13 @@ class Vsfs(object):
 
 		if inFolderInode is not None:
 			#Check parent folder has free capacity
-			parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+			parentFolderMeta, parentFolderPtrs = self._load_inode(inFolderInode)
 
 			if parentFolderMeta['inodeType'] != 1:
 				raise ValueError("Parent inode must be a folder")
 
 			parentFolderOk, freeFolderBlockNum, freeFolderBlockData, freeEntryNum = \
-				self._check_folder_can_hold_another_inoid(parentFolderInodeNum, parentFolderPtrs)
+				self._check_folder_can_hold_another_inoid(inFolderInode, parentFolderPtrs)
 		else:
 			parentFolderOk = 1
 			freeFolderBlockNum, freeFolderBlockData, freeEntryNum = None, None, None
@@ -546,7 +546,7 @@ class Vsfs(object):
 			folderInodeNum = 0
 		else:
 			self.handle.seek(self.inodeBitmapStart * self.blockSize)
-			inodeBitmap = self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize)
+			inodeBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
 
 			maxInodeNum = self._get_max_inode_number()
 			freeInodeNums = FindLooseBlocks(inodeBitmap, 1, maxInodeNum+1)
@@ -559,7 +559,7 @@ class Vsfs(object):
 
 		if inFolderInode is not None:
 			#Update parent folder
-			self._add_inode_to_folder(self, foldername, fileInodeNum, inFolderInode, \
+			self._add_inode_to_folder(foldername, folderInodeNum, inFolderInode, \
 				freeFolderBlockNum, freeFolderBlockData, freeEntryNum)
 
 		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
@@ -634,8 +634,14 @@ class Vsfs(object):
 
 		pathSplit = list(os.path.split(filename))
 
+		#Find parent folder inode
+		folderPtr = None
 		if pathSplit[0] == "/" or pathSplit[0] == "":
 			folderPtr = 0 #Hard coded inode
+		#TODO finish this
+
+		if folderPtr is None:
+			raise RuntimeError("Unknown path: '"+str(pathSplit[0])+"'")
 
 		if folderPtr == 0 and pathSplit[1] == "":
 			return 0 #Hard coded inode
@@ -836,7 +842,7 @@ class Vsfs(object):
 		bitmapVal = self.handle.write(chr(updatedBitmapVal))
 
 	def mkdir(self, path, mode):
-		pathSplit = os.path.split(filename)
+		pathSplit = os.path.split(path)
 
 		parentInode = self._filename_to_inode(pathSplit[0])
 		if parentInode is None:

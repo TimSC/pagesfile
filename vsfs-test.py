@@ -101,6 +101,16 @@ def CreateAndDeleteFile():
 		raise Exception("Wrong number of files")
 	return 1
 
+def CreateUseAndDeleteFolder():
+	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs.mkdir("/foo", 0)
+	if len(fs.listdir("/")) != 1:
+		raise Exception("Failed to create folder")
+
+	fs.rmdir("/foo")
+	if len(fs.listdir("/")) != 1:
+		raise Exception("Failed to delete folder")
+
 def FileStat():
 	fs = vsfs.Vsfs("test.vsfs", 1)
 	print fs.stat("/")
@@ -114,4 +124,5 @@ if __name__=="__main__":
 	print "ReadAndWrite test", ReadAndWrite()
 	print "FileHandleSync test", FileHandleSync()
 	print "CreateAndDeleteFile test", CreateAndDeleteFile()
+	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder()
 
