@@ -638,7 +638,9 @@ class Vsfs(object):
 		folderPtr = None
 		if pathSplit[0] == "/" or pathSplit[0] == "":
 			folderPtr = 0 #Hard coded inode
-		#TODO finish this
+
+		if folderPtr is None:
+			folderPtr = self._filename_to_inode(pathSplit[0])
 
 		if folderPtr is None:
 			raise RuntimeError("Unknown path: '"+str(pathSplit[0])+"'")
@@ -718,8 +720,10 @@ class Vsfs(object):
 		return handle
 
 	def listdir(self, path):
+		folderInode = self._filename_to_inode(path)
+
 		#Get folder inode
-		folderMeta, folderPtrs = self._load_inode(0)
+		folderMeta, folderPtrs = self._load_inode(folderInode)
 		if folderMeta['inodeType'] != 1:
 			raise ValueError("Not a folder")	
 

@@ -107,6 +107,37 @@ def CreateUseAndDeleteFolder():
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
 
+	fi = fs.open("/foo/test.txt", "w")
+	fi.write("foobar")
+	fi.close()
+
+	fs.rm("/foo/test.txt")
+
+	fs.rmdir("/foo")
+	if len(fs.listdir("/")) != 0:
+		raise Exception("Failed to delete folder")
+	return 1
+
+def CreateUseAndDeleteNestedFolder():
+	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs.mkdir("/foo", 0)
+	if len(fs.listdir("/")) != 1:
+		raise Exception("Failed to create folder")
+
+	fs.mkdir("/foo/bar", 0)
+	if len(fs.listdir("/foo")) != 1:
+		raise Exception("Failed to create folder")
+
+	fi = fs.open("/foo/bar/test.txt", "w")
+	fi.write("foobar")
+	fi.close()
+
+	fs.rm("/foo/bar/test.txt")
+
+	fs.rmdir("/foo/bar")
+	if len(fs.listdir("/foo")) != 0:
+		raise Exception("Failed to delete folder")
+
 	fs.rmdir("/foo")
 	if len(fs.listdir("/")) != 0:
 		raise Exception("Failed to delete folder")
@@ -126,4 +157,5 @@ if __name__=="__main__":
 	print "FileHandleSync test", FileHandleSync()
 	print "CreateAndDeleteFile test", CreateAndDeleteFile()
 	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder()
+	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder()
 
