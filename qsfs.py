@@ -979,7 +979,7 @@ class QsfsFile(object):
 			raise ValueError("Only r and w modes implemented")
 
 	def __del__(self):
-		print "QsfsFile.__del__"
+		#print "QsfsFile.__del__"
 		if not self._closed:
 			self.close()
 

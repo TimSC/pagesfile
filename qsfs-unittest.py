@@ -156,7 +156,7 @@ def DeleteInUseThings():
 	failed = False
 	try:
 		fs.rm("/foo/test.txt")
-	except OSError:
+	except Exception:
 		failed = True
 	if not failed:
 		raise Exception("This should throw an exception")
@@ -165,7 +165,7 @@ def DeleteInUseThings():
 	failed = False
 	try:
 		fs.rmdir("/foo")
-	except OSError:
+	except Exception:
 		failed = True
 	if not failed:
 		raise Exception("This should throw an exception")
