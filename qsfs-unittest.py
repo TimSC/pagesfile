@@ -143,6 +143,36 @@ def CreateUseAndDeleteNestedFolder():
 		raise Exception("Failed to delete folder")
 	return 1
 
+def DeleteInUseThings():
+	fs = qsfs.Qsfs("test.qsfs", 1)
+	fs.mkdir("/foo", 0)
+	if len(fs.listdir("/")) != 1:
+		raise Exception("Failed to create folder")
+
+	fi = fs.open("/foo/test.txt", "w")
+	fi.write("foobar")
+
+	#This should fail
+	failed = False
+	try:
+		fs.rm("/foo/test.txt")
+	except OSError:
+		failed = True
+	if not failed:
+		raise Exception("This should throw an exception")
+
+	#This should fail	
+	failed = False
+	try:
+		fs.rmdir("/foo")
+	except OSError:
+		failed = True
+	if not failed:
+		raise Exception("This should throw an exception")
+
+	fi.close()
+	return 1
+
 def FileStat():
 	fs = qsfs.Qsfs("test.qsfs", 1)
 	print fs.stat("/")
@@ -158,4 +188,5 @@ if __name__=="__main__":
 	print "CreateAndDeleteFile test", CreateAndDeleteFile()
 	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder()
 	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder()
+	print "DeleteInUseThings test", DeleteInUseThings()
 

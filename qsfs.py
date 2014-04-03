@@ -719,9 +719,7 @@ class Qsfs(object):
 		self.handles[fileInode].append(handle)
 		return handle
 
-	def listdir(self, path):
-		folderInode = self._filename_to_inode(path)
-
+	def _list_folder(self, folderInode):
 		#Get folder inode
 		folderMeta, folderPtrs = self._load_inode(folderInode)
 		if folderMeta['inodeType'] != 1:
@@ -738,6 +736,13 @@ class Qsfs(object):
 					continue #Not in use
 				out.append(entry[2])
 		return out
+
+	def listdir(self, path):
+		folderInode = self._filename_to_inode(path)
+		if folderInode is None:
+			raise OSError("No such folder")
+
+		return self._list_folder(folderInode)
 
 	def stat(self, path):
 
@@ -799,14 +804,16 @@ class Qsfs(object):
 
 		meta, ptrs = self._load_inode(folderInode)
 
-		#Check file handle is not open inside this folder
-		#TODO
-
 		if meta['inodeType'] == 2:
 			raise OSError("Cannot rmdir a file")
 
 		if meta['inodeType'] != 1:
 			raise OSError("Inode not a folder")
+
+		#Check folder is empty
+		folderContent = self._list_folder(folderInode)
+		if len(folderContent) != 0:
+			raise OSError("Folder must be empty before rmdir")
 
 		#Update parent folder
 		self._remove_inode_from_folder(folderInode, parentInode)
