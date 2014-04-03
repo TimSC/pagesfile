@@ -5,6 +5,8 @@ compressedfile.py - A random access compressed file
 
 hashtable.py - A file based hash table
 
+qsfs.py - A virtual file system that can reside in a file or a StringIO buffer. A FUSE interface is included.
+
 Copyright (c) 2014, Tim Sheerman-Chase
 All rights reserved.
 

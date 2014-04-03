@@ -464,15 +464,24 @@ class Qsfs(object):
 		if len(freePtrNums) < blocksToAdd:
 			raise RuntimeError("Insufficient pointer space")
 
-		#TODO Optimise by preallocating continuous blocks
-
-		#Get a free block
+		#Read data block bitmap
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
-		freeBlocks = FindLooseBlocks(dataBitmap, blocksToAdd, self.sizeDataBlocks)
+
+		#Get free blocks by continuous free space
+		freeBlocks = []
+		preAllocateBlocksStart, preAllocateBlocksSize = FindLargestFreeSpace(dataBitmap, blocksToAdd)
+		if preAllocateBlocksStart is not None:
+			freeBlocks = range(preAllocateBlocksStart, preAllocateBlocksStart+preAllocateBlocksSize)
+
+		#Fall back to using individual spare blocks
+		if len(freeBlocks) < blocksToAdd:
+			extraBlocks = FindLooseBlocks(dataBitmap, blocksToAdd - len(freeBlocks), self.sizeDataBlocks,
+				preAllocateBlocksStart, preAllocateBlocksSize)
+			freeBlocks.extend(extraBlocks)
 
 		if len(freeBlocks) < blocksToAdd:
-			raise RuntimeError("Insufficient blocks available")
+			raise RuntimeError("Insufficient data blocks available")
 
 		for i, blk in enumerate(freeBlocks):
 			#Update data bitmap
