@@ -414,8 +414,8 @@ class Qsfs(object):
 		freeFolderBlockData[freeEntryNum][2] = filename
 		self._write_folder_block(freeFolderBlockNum, freeFolderBlockData)
 
-	def _create_file(self, filename, fileSize, parentFolderInodeNum):
-		#print "_create_file", filename, fileSize, parentFolderInodeNum
+	def _create_file(self, filename, parentFolderInodeNum):
+		#print "_create_file", filename, parentFolderInodeNum
 
 		encodedFilename = filename.encode("utf-8")
 		if len(encodedFilename) > self.maxFilenameLen:
@@ -432,23 +432,6 @@ class Qsfs(object):
 		if not parentFolderOk:
 			raise RuntimeError("Folder has reached the maximum number of files")
 
-		requiredFreeBlocks = int(math.ceil(float(fileSize) / self.blockSize))
-		if requiredFreeBlocks > 0:
-			#Preallocate blocks
-
-			self.handle.seek(self.dataBitmapStart * self.blockSize)
-			dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
-
-			dataBlockNums = []
-			preAllocateBlocksStart, preAllocateBlocksSize = FindLargestFreeSpace(dataBitmap, requiredFreeBlocks)
-			if preAllocateBlocksStart is not None:
-				dataBlockNums = range(preAllocateBlocksStart, preAllocateBlocksStart+preAllocateBlocksSize)
-
-			if len(dataBlockNums) < requiredFreeBlocks:
-				extraBlocks = FindLooseBlocks(dataBitmap, requiredFreeBlocks - len(dataBlockNums), self.sizeDataBlocks, 
-					preAllocateBlocksStart, preAllocateBlocksSize)
-				dataBlockNums.extend(extraBlocks)
-
 		#Allocate an inode number for this file
 		self.handle.seek(self.inodeBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
@@ -459,11 +442,7 @@ class Qsfs(object):
 		fileInodeNum = freeInodes[0]
 		
 		#Create inode
-		self._create_inode(fileInodeNum, 2, fileSize)
-
-		#Set inode pointers
-		if requiredFreeBlocks > 0:
-			self._allocate_space_to_inode(fileInodeNum, requiredFreeBlocks)
+		self._create_inode(fileInodeNum, 2, 0)
 
 		#Update parent folder
 		self._add_inode_to_folder(filename, fileInodeNum, parentFolderInodeNum, \
@@ -689,7 +668,7 @@ class Qsfs(object):
 		if parentFolder is None:
 			raise RuntimeError("Known folder: "+str(pathSplit[0]))
 
-		fileInode = self._create_file(pathSplit[1], 0, parentFolder)
+		fileInode = self._create_file(pathSplit[1], parentFolder)
 
 		if fileInode in self.inodeMeta:
 			raise RuntimeError("Internal error, old meta data retained")
