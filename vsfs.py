@@ -524,8 +524,25 @@ class Vsfs(object):
 			if inFolderInode != None:
 				raise ValueError("Root folder has no parent folder")
 
+		if inFolderInode is not None:
+			#Check parent folder has free capacity
+			parentFolderMeta, parentFolderPtrs = self._load_inode(parentFolderInodeNum)
+
+			if parentFolderMeta['inodeType'] != 1:
+				raise ValueError("Parent inode must be a folder")
+
+			parentFolderOk, freeFolderBlockNum, freeFolderBlockData, freeEntryNum = \
+				self._check_folder_can_hold_another_inoid(parentFolderInodeNum, parentFolderPtrs)
+		else:
+			parentFolderOk = 1
+			freeFolderBlockNum, freeFolderBlockData, freeEntryNum = None, None, None
+
+		if not parentFolderOk:
+			raise RuntimeError("Folder has insufficient space for another inode")
+
 		#Allocate a free inode
 		if foldername == None:
+			#The root folder is a special case with a hard coded inode
 			folderInodeNum = 0
 		else:
 			self.handle.seek(self.inodeBitmapStart * self.blockSize)
@@ -540,7 +557,10 @@ class Vsfs(object):
 
 		self._create_inode(folderInodeNum, 1, 0)
 
-		#print self._load_inode(folderInodeNum)
+		if inFolderInode is not None:
+			#Update parent folder
+			self._add_inode_to_folder(self, foldername, fileInodeNum, inFolderInode, \
+				freeFolderBlockNum, freeFolderBlockData, freeEntryNum)
 
 		allocatedBlocks = self._allocate_space_to_inode(folderInodeNum, 1)
 
@@ -612,10 +632,16 @@ class Vsfs(object):
 
 	def _filename_to_inode(self, filename):
 
-		pathSplit = os.path.split(filename)
+		pathSplit = list(os.path.split(filename))
+
+		if pathSplit[0] == "/" or pathSplit[0] == "":
+			folderPtr = 0 #Hard coded inode
+
+		if folderPtr == 0 and pathSplit[1] == "":
+			return 0 #Hard coded inode
 
 		#Get folder inode
-		folderMeta, folderPtrs = self._load_inode(0)
+		folderMeta, folderPtrs = self._load_inode(folderPtr)
 		if folderMeta['inodeType'] != 1:
 			raise ValueError("Not a folder")
 
@@ -661,7 +687,10 @@ class Vsfs(object):
 
 		#Create new file
 		pathSplit = os.path.split(filename)
-		parentFolder = 0
+		parentFolder = self._filename_to_inode(pathSplit[0])
+		if parentFolder is None:
+			raise RuntimeError("Known folder: "+str(pathSplit[0]))
+
 		fileInode = self._create_file(pathSplit[1], 0, parentFolder)
 
 		if fileInode in self.inodeMeta:
@@ -806,6 +835,19 @@ class Vsfs(object):
 		self.handle.seek(filePos)
 		bitmapVal = self.handle.write(chr(updatedBitmapVal))
 
+	def mkdir(self, path, mode):
+		pathSplit = os.path.split(filename)
+
+		parentInode = self._filename_to_inode(pathSplit[0])
+		if parentInode is None:
+			raise RuntimeError("Parent folder inode not found")
+
+		#Create inode for folder
+		self._create_folder(pathSplit[1], parentInode)
+
+	def rmdir(self, path):
+		raise RuntimeError("Not implmented")
+	
 #**************** File class *******************
 
 class VsfsFile(object):
