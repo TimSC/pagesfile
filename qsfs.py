@@ -946,7 +946,7 @@ class Qsfs(object):
 		#Remove inode for folder
 		self._remove_folder(folderInode, parentFolderInode)
 
-	def countInodesInUse(self):
+	def _countInodesInUse(self):
 
 		self.handle.seek(self.inodeBitmapStart * self.blockSize)
 		inodeBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
@@ -970,7 +970,7 @@ class Qsfs(object):
 
 		return inUseCount
 
-	def countDataBlocksInUse(self):
+	def _countDataBlocksInUse(self):
 		#Read data block bitmap
 		self.handle.seek(self.dataBitmapStart * self.blockSize)
 		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
@@ -985,8 +985,8 @@ class Qsfs(object):
 		return inUseCount
 
 	def statvfs(self, path):
-		blocksInUse = self.countDataBlocksInUse()
-		inodesInUse = self.countInodesInUse()
+		blocksInUse = self._countDataBlocksInUse()
+		inodesInUse = self._countInodesInUse()
 
 		result = StatFsResult()
 		result.f_bsize = self.blockSize 					# filesystem block size
