@@ -948,7 +948,15 @@ class Qsfs(object):
 		self._rename_inode(fileInode, oldParentInode, newPathSplit[1])
 	
 	def mv(self, oldPath, newPath):
-		pass
+		#Detect a simple rename
+		oldPathSplit = os.path.split(oldPath)
+		newPathSplit = os.path.split(newPath)
+		if oldPathSplit[0] == newPathSplit[0]:
+			self.rename(oldPath, newPath)
+			return
+
+		#True moving of files is not supported
+		raise RuntimeError("Not implemented")
 
 #**************** File class *******************
 

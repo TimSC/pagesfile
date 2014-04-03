@@ -147,7 +147,7 @@ class VsfsFuse(Fuse):
 
 	def rename(self, oldPath, newPath):
 		print 'rename', oldPath, newPath
-		self.fs.rename(oldPath, newPath)
+		self.fs.mv(oldPath, newPath)
 		return 0
 
 	def rmdir(self, path):
