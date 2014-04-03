@@ -1,23 +1,23 @@
 
-import vsfs, os
+import qsfs, os
 
 def CreateMultipleFiles():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 	for i in range(30):
 		fi = fs.open("test{0}".format(i),"w")
 	found = fs.listdir("/")
 	if len(found) != 30:
-		os.unlink("test.vsfs")
+		os.unlink("test.qsfs")
 		raise Exception("Wrong number of files")
 	for i in range(30):
 		if "test{0}".format(i) not in found:
-			os.unlink("test.vsfs")
+			os.unlink("test.qsfs")
 			raise Exception("Missing file")
-	os.unlink("test.vsfs")
+	os.unlink("test.qsfs")
 	return 1
 
 def ReadAndWrite():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -46,7 +46,7 @@ def ReadAndWrite():
 	del fi2
 	del fs
 
-	fs = vsfs.Vsfs("test.vsfs")
+	fs = qsfs.Qsfs("test.qsfs")
 	#fs._print_layout()
 
 	fi2 =  fs.open("test1","r")
@@ -60,7 +60,7 @@ def ReadAndWrite():
 	return 1
 
 def FileHandleSync():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -82,7 +82,7 @@ def FileHandleSync():
 	return 1
 
 def CreateAndDeleteFile():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -102,7 +102,7 @@ def CreateAndDeleteFile():
 	return 1
 
 def CreateUseAndDeleteFolder():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 	fs.mkdir("/foo", 0)
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
@@ -119,7 +119,7 @@ def CreateUseAndDeleteFolder():
 	return 1
 
 def CreateUseAndDeleteNestedFolder():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 	fs.mkdir("/foo", 0)
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
@@ -144,7 +144,7 @@ def CreateUseAndDeleteNestedFolder():
 	return 1
 
 def FileStat():
-	fs = vsfs.Vsfs("test.vsfs", 1)
+	fs = qsfs.Qsfs("test.qsfs", 1)
 	print fs.stat("/")
 	fi = fs.open("test.txt", "w")
 	fi.write("foobar")

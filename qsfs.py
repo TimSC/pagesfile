@@ -73,10 +73,10 @@ class StatResult(object):
 	def __str__(self):
 		return "StatResult"+str(self.__dict__)
 
-#******************* Very simple file system *******************
+#******************* Quite simple file system *******************
 
-class Vsfs(object):
-	#A very simple file system in pure python
+class Qsfs(object):
+	#A quite simple file system in pure python
 	#Inspired by "Operating Systems: Three Easy Pieces", 
 	#by Remzi H. Arpaci-Dusseau and Andrea C. Arpaci-Dusseau, Chapter 40
 	#http://pages.cs.wisc.edu/~remzi/OSTEP/file-implementation.pdf
@@ -163,7 +163,7 @@ class Vsfs(object):
 		self.handle.seek(0)
 		self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
 		self.handle.seek(0)
-		self.handle.write("vsfs")
+		self.handle.write("qsfs")
 
 	def _update_superblock_data(self):
 		self.handle.seek(4)
@@ -195,8 +195,8 @@ class Vsfs(object):
 	def _read_superblock_data(self):
 		self.handle.seek(0)
 		fsIdent = self.handle.read(4)
-		if fsIdent != "vsfs":
-			raise IOError("Unrecognised identifier for vsfs file system")
+		if fsIdent != "qsfs":
+			raise IOError("Unrecognised identifier for qsfs file system")
 
 		#Main parameters
 		self.blockSize = struct.unpack(">Q", self.handle.read(8))[0]
@@ -682,7 +682,7 @@ class Vsfs(object):
 				self.inodeMeta[fileInode] = fiMeta
 				self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
 
-			handle = VsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
+			handle = QsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
 
 			if fileInode not in self.handles:
 				self.handles[fileInode] = []
@@ -713,7 +713,7 @@ class Vsfs(object):
 		self.inodeMeta[fileInode] = fiMeta
 		self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
 
-		handle = VsfsFile(fileInode, self, mode, fiMeta, fiUsedDataPtrs)
+		handle = QsfsFile(fileInode, self, mode, fiMeta, fiUsedDataPtrs)
 		if fileInode not in self.handles:
 			self.handles[fileInode] = []
 		self.handles[fileInode].append(handle)
@@ -910,7 +910,7 @@ class Vsfs(object):
 	
 #**************** File class *******************
 
-class VsfsFile(object):
+class QsfsFile(object):
 	def __init__(self, fileInode, parent, mode, fiMeta, fiUsedDataPtrs):
 		self.parent = parent
 		self.fileInode = fileInode

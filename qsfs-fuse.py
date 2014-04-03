@@ -2,7 +2,7 @@
 #FUSE interfase for very simple file system
 
 import os, stat, errno
-import vsfs
+import qsfs
 
 try:
 	import _find_fuse_parts
@@ -168,7 +168,7 @@ class VsfsFuse(Fuse):
 		return -errno.ENOSYS
 
 def main():
-	fs = vsfs.Vsfs("test.vsfs")
+	fs = qsfs.Qsfs("test.qsfs")
 	fi = fs.open("test.txt","w")
 	fi.write("foobar\n")
 	fi.close()
