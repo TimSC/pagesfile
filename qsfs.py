@@ -622,7 +622,10 @@ class Qsfs(object):
 
 		#Closed handles are no longer a concern for this class
 		siblingHandles[i]._internal_close()
+
 		del siblingHandles[i]
+
+		print siblingHandles
 
 		if len(siblingHandles) == 0:
 			#Last handle for inode deleted, metadata can be dropped
@@ -687,6 +690,7 @@ class Qsfs(object):
 			if fileInode not in self.handles:
 				self.handles[fileInode] = []
 			self.handles[fileInode].append(handle)
+			print "Handle count", len(self.handles[fileInode])
 
 			return handle
 
@@ -717,6 +721,7 @@ class Qsfs(object):
 		if fileInode not in self.handles:
 			self.handles[fileInode] = []
 		self.handles[fileInode].append(handle)
+
 		return handle
 
 	def _list_folder(self, folderInode):
@@ -902,21 +907,21 @@ class Qsfs(object):
 		parentFolderInode = self._filename_to_inode(pathSplit[0])
 
 		if fileInode is None:
-			raise OSError("No such file or directory: '{0}'".format(path))
+			raise RuntimeError("No such file or directory: '{0}'".format(path))
 
 		if parentFolderInode is None:
-			raise OSError("Internal error: could not find parent inode")
+			raise RuntimeError("Internal error: could not find parent inode")
 
 		if fileInode in self.handles:
-			raise OSError("File currently open")
+			raise RuntimeError("File currently open")
 
 		meta, ptrs = self._load_inode(fileInode)
 
 		if meta['inodeType'] == 1:
-			raise OSError("Cannot rm a folder")
+			raise RuntimeError("Cannot rm a folder")
 
 		if meta['inodeType'] != 2:
-			raise OSError("Inode not a file")
+			raise RuntimeError("Inode not a file")
 
 		#Update parent folder
 		self._remove_inode_from_folder(fileInode, parentFolderInode)

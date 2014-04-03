@@ -1,7 +1,7 @@
 
 #FUSE interfase for very simple file system
 
-import os, stat, errno
+import os, stat, errno, cStringIO
 import qsfs
 
 try:
@@ -83,6 +83,7 @@ class VsfsFuse(Fuse):
 		handle = self.fs.open(path, "w")
 		handle.write("stuff")
 		print handle
+		handle.close()
 		del handle
 		return 0
 
@@ -97,7 +98,10 @@ class VsfsFuse(Fuse):
 			print "Expected path to be already open"
 		self.openCount[path] -= 1
 		if self.openCount[path] == 0:
+			print "Closing handle"
 			del self.openCount[path]
+			print self.handles[path]
+			self.handles[path].close()
 			del self.handles[path]
 		return 0
 
@@ -229,7 +233,8 @@ class VsfsFuse(Fuse):
 		return -errno.ENOSYS
 
 def main():
-	fs = qsfs.Qsfs("test.qsfs")
+	#fs = qsfs.Qsfs("test.qsfs")
+	fs = qsfs.Qsfs(cStringIO.StringIO(), 1)
 	fi = fs.open("test.txt","w")
 	fi.write("foobar\n")
 	fi.close()
