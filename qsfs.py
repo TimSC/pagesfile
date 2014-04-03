@@ -73,6 +73,22 @@ class StatResult(object):
 	def __str__(self):
 		return "StatResult"+str(self.__dict__)
 
+class StatFsResult(object):
+	def __init__(self):
+		self.f_bsize=0
+		self.f_frsize=0
+		self.f_blocks=0
+		self.f_bfree=0
+		self.f_bavail=0
+		self.f_files=0
+		self.f_ffree=0
+		self.f_favail=0
+		self.f_flag=0
+		self.f_namemax=0
+
+	def __str__(self):
+		return "StatFsResult"+str(self.__dict__)
+
 #******************* Quite simple file system *******************
 
 class Qsfs(object):
@@ -929,6 +945,61 @@ class Qsfs(object):
 
 		#Remove inode for folder
 		self._remove_folder(folderInode, parentFolderInode)
+
+	def countInodesInUse(self):
+
+		self.handle.seek(self.inodeBitmapStart * self.blockSize)
+		inodeBitmap = bytearray(self.handle.read(self.sizeBlocksInodeBitmap * self.blockSize))
+
+		inodeBitmapLen = self._get_max_inode_number() + 1
+
+		inUseCount = 0
+		inodeNum = 0
+
+		for byteVal in inodeBitmap:
+			for bitNum in range(8):
+				bitVal = (byteVal & (0x01 << bitNum)) != 0
+				if bitVal != 0:
+					inUseCount += 1
+				inodeNum += 1	
+
+				if inodeNum >= inodeBitmapLen:
+					break
+			if inodeNum >= inodeBitmapLen:
+				break
+
+		return inUseCount
+
+	def countDataBlocksInUse(self):
+		#Read data block bitmap
+		self.handle.seek(self.dataBitmapStart * self.blockSize)
+		dataBitmap = bytearray(self.handle.read(self.sizeBlocksDataBitmap * self.blockSize))
+
+		inUseCount = 0
+		for byteVal in dataBitmap:
+			for bitNum in range(8):
+				bitVal = (byteVal & (0x01 << bitNum)) != 0
+				if bitVal != 0:
+					inUseCount += 1
+
+		return inUseCount
+
+	def statvfs(self, path):
+		blocksInUse = self.countDataBlocksInUse()
+		inodesInUse = self.countInodesInUse()
+
+		result = StatFsResult()
+		result.f_bsize = self.blockSize 					# filesystem block size
+		result.f_frsize = self.blockSize					# fragment size
+		result.f_blocks = self.sizeDataBlocks 				# size of fs in f_frsize units
+		result.f_bfree = result.f_blocks - blocksInUse		# # free blocks
+		result.f_bavail = result.f_bfree					# # free blocks for unprivileged users
+		result.f_files = self._get_max_inode_number() + 1	# # inodes
+		result.f_ffree = result.f_files - inodesInUse 		# # free inodes
+		result.f_favail = result.f_ffree					# # free inodes for unprivileged users
+		result.f_flag = 0 									# mount flags
+		result.f_namemax = self.maxFilenameLen 				# maximum filename length
+		return result
 	
 	def rename(self, oldName, newName):
 		fileInode = self._filename_to_inode(oldName)

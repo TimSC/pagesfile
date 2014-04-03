@@ -157,7 +157,16 @@ class VsfsFuse(Fuse):
 
 	def statfs(self):
 		print 'statfs'
-		return -errno.ENOSYS
+		try:
+			result = self.fs.statvfs("/")
+			fuseStat = fuse.StatVfs()
+			for key in result.__dict__:
+				setattr(fuseStat, key, getattr(result, key))
+			return fuseStat
+
+		except OSError:
+			return -errno.ENOENT
+		return -errno.ENOENT
 
 	def symlink(self, targetPath, linkPath):
 		print 'symlink', targetPath, linkPath
@@ -187,9 +196,9 @@ class VsfsFuse(Fuse):
 		print "fsyncdir", args
 		return -errno.ENOSYS
 
-	def fgetattr(self, *args):
-		print "fgetattr", args
-		return -errno.ENOSYS
+	def fgetattr(self, path):
+		print "fgetattr", path
+		return self.getattr(path)
 
 	def ftruncate(self, *args):
 		print "ftruncate", args
