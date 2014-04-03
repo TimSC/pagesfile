@@ -139,32 +139,92 @@ class VsfsFuse(Fuse):
 		return 0
 
 	def readlink(self, path):
-		print '*** readlink', path
+		print 'readlink', path
 		return -errno.ENOSYS
 
 	def rename(self, oldPath, newPath):
-		print '*** rename', oldPath, newPath
+		print 'rename', oldPath, newPath
 		return -errno.ENOSYS
 
 	def rmdir(self, path):
-		print '*** rmdir', path
+		print 'rmdir', path
 		self.fs.rmdir(path)
 		return 0
 
 	def statfs(self):
-		print '*** statfs'
+		print 'statfs'
 		return -errno.ENOSYS
 
 	def symlink(self, targetPath, linkPath):
-		print '*** symlink', targetPath, linkPath
+		print 'symlink', targetPath, linkPath
 		return -errno.ENOSYS
 
 	def truncate (self, path, size):
-		print '*** truncate', path, size
+		print 'truncate', path, size
 		return -errno.ENOSYS
 
 	def utime (self, path, times):
-		print '*** utime', path, times
+		print 'utime', path, times
+		return -errno.ENOSYS
+
+	def create(self, *args):
+		print "create"
+		return -errno.ENOSYS
+
+	def opendir(self, *args):
+		print "opendir", args
+		return 0
+
+	def releasedir(self, *args):
+		print "releasedir"
+		return 0
+
+	def fsyncdir(self, *args):
+		print "fsyncdir", args
+		return -errno.ENOSYS
+
+	def fgetattr(self, *args):
+		print "fgetattr", args
+		return -errno.ENOSYS
+
+	def ftruncate(self, *args):
+		print "ftruncate", args
+		return -errno.ENOSYS
+
+	def getxattr(self, *args):
+		print "getxattr", args
+		return -errno.ENOSYS
+
+	def listxattr(self, *args):
+		print "listxattr", args
+		return -errno.ENOSYS
+
+	def setxattr(self, *args):
+		print "setxattr", args
+		return -errno.ENOSYS
+
+	def removexattr(self):
+		print "removexattr", args
+		return -errno.ENOSYS
+
+	def access(self, *args):
+		print "access", args
+		return -errno.ENOSYS
+
+	def lock(self, *args, **argDict):
+		print "lock", args, argDict
+		return -errno.ENOSYS
+
+	def bmap(self, *args):
+		print "bmap", args
+		return -errno.ENOSYS
+
+	def fsinit(self, *args):
+		print "fsinit", args
+		return -errno.ENOSYS
+
+	def fsdestroy(self, *args):
+		print "fsdestroy", args
 		return -errno.ENOSYS
 
 def main():
