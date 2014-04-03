@@ -1,4 +1,4 @@
-import struct, os, math, stat
+import struct, os, math, stat, sys
 
 #******************** Utility functions *********************
 
@@ -86,7 +86,7 @@ class Qsfs(object):
 		
 		createFile = False
 		self.debugMode = False
-		self.handles = {}
+		self.handleCounts = {}
 		self.inodeMeta = {}
 		self.inodeDataBlocks = {}
 		self.freeVal = struct.unpack(">Q", "\xff\xff\xff\xff\xff\xff\xff\xff")[0]
@@ -606,32 +606,19 @@ class Qsfs(object):
 		self.handle.write(self.inodeMetaStruct.pack(inodeType, newFileSize))
 
 	def _close_event(self, handle):
-		if handle.fileInode not in self.handles:
+		if handle.fileInode not in self.handleCounts:
 			raise RuntimeError("Internal error, expected known inode")
 
-		siblingHandles = self.handles[handle.fileInode]
-		ind = None
-		for i, h in enumerate(siblingHandles):
-			if id(h) == id(handle):
-				ind = i
-			if ind is not None:
-				break
-
-		if ind is None:
-			raise RuntimeError("Internal error, expected known handle")
+		self.handleCounts[handle.fileInode] -= 1
 
 		#Closed handles are no longer a concern for this class
-		siblingHandles[i]._internal_close()
+		handle._internal_close()
 
-		del siblingHandles[i]
-
-		print siblingHandles
-
-		if len(siblingHandles) == 0:
+		if self.handleCounts[handle.fileInode] == 0:
 			#Last handle for inode deleted, metadata can be dropped
-			del self.handles[handle.fileInode]
 			del self.inodeMeta[handle.fileInode]
 			del self.inodeDataBlocks[handle.fileInode]
+			del self.handleCounts[handle.fileInode]
 
 	def _filename_to_inode(self, filename):
 
@@ -687,10 +674,9 @@ class Qsfs(object):
 
 			handle = QsfsFile(fileInode, self, mode, self.inodeMeta[fileInode], self.inodeDataBlocks[fileInode])
 
-			if fileInode not in self.handles:
-				self.handles[fileInode] = []
-			self.handles[fileInode].append(handle)
-			print "Handle count", len(self.handles[fileInode])
+			if fileInode not in self.handleCounts:
+				self.handleCounts[fileInode] = 0
+			self.handleCounts[fileInode] += 1
 
 			return handle
 
@@ -718,9 +704,9 @@ class Qsfs(object):
 		self.inodeDataBlocks[fileInode] = fiUsedDataPtrs
 
 		handle = QsfsFile(fileInode, self, mode, fiMeta, fiUsedDataPtrs)
-		if fileInode not in self.handles:
-			self.handles[fileInode] = []
-		self.handles[fileInode].append(handle)
+		if fileInode not in self.handleCounts:
+			self.handleCounts[fileInode] = 0
+		self.handleCounts[fileInode] += 1
 
 		return handle
 
@@ -912,7 +898,7 @@ class Qsfs(object):
 		if parentFolderInode is None:
 			raise RuntimeError("Internal error: could not find parent inode")
 
-		if fileInode in self.handles:
+		if fileInode in self.handleCounts:
 			raise RuntimeError("File currently open")
 
 		meta, ptrs = self._load_inode(fileInode)
@@ -993,6 +979,7 @@ class QsfsFile(object):
 			raise ValueError("Only r and w modes implemented")
 
 	def __del__(self):
+		print "QsfsFile.__del__"
 		if not self._closed:
 			self.close()
 

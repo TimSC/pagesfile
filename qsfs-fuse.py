@@ -83,7 +83,6 @@ class VsfsFuse(Fuse):
 		handle = self.fs.open(path, "w")
 		handle.write("stuff")
 		print handle
-		handle.close()
 		del handle
 		return 0
 
