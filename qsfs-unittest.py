@@ -23,7 +23,7 @@ def CreateMultipleFiles(factory):
 	return 1
 
 def ReadAndWrite(factory):
-	fs = factory()
+	fs = factory(1)
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -52,10 +52,10 @@ def ReadAndWrite(factory):
 	del fi2
 	del fs
 
-	fs = factory()
+	fs = factory(0)
 	#fs._print_layout()
 
-	fi2 =  fs.open("test1","r")
+	fi2 = fs.open("test1","r")
 	testStr2 = fi2.read(8000)
 	count = 0
 	for a, b in zip(testStr, testStr2):
@@ -229,12 +229,16 @@ def FileStat(factory):
 	print fs.stat("/foo/test.txt")
 	return 1
 
-def FactoryFileStore():
-	return qsfs.Qsfs("test.qsfs", 1)
+def FactoryFileStore(reset = 1):
+	return qsfs.Qsfs("test.qsfs", reset)
 
-def FactoryStringIO():
+def FactoryStringIO(reset = 1):
 	import cStringIO
-	return qsfs.Qsfs(cStringIO.StringIO(), 1)
+	return qsfs.Qsfs(cStringIO.StringIO(), reset)
+
+def FactoryCompressedFile(reset = 1):
+	import compressedfile
+	return qsfs.Qsfs(compressedfile.CompressedFile("test.cqsfs"), reset)
 
 def UnitTests():
 	if 1:
@@ -244,6 +248,10 @@ def UnitTests():
 	if 0:
 		factory = FactoryStringIO
 		reloadable = 0
+
+	if 0:
+		factory = FactoryCompressedFile
+		reloadable = 1
 
 	print "CreateMultipleFiles test", CreateMultipleFiles(factory)
 	if reloadable:
