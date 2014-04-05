@@ -236,15 +236,15 @@ class Qsfs(object):
 	def _quick_format(self):
 
 		#Format Inode bitmap
+		emptyBlock = "".join(["\x00" for i in range(self.blockSize)])
 		for blockNum in range(self.inodeBitmapStart, self.inodeBitmapStart + self.sizeBlocksInodeBitmap):
 			self.handle.seek(blockNum * self.blockSize)
-			self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
+			self.handle.write(emptyBlock)
 
 		#Format data bitmap
 		for blockNum in range(self.dataBitmapStart, self.dataBitmapStart + self.sizeBlocksDataBitmap):
 			self.handle.seek(blockNum * self.blockSize)
-			for i in range(self.blockSize):
-				self.handle.write("".join(["\x00" for i in range(self.blockSize)]))
+			self.handle.write(emptyBlock)
 
 		#Create root directory
 		self._create_folder(None, None)
