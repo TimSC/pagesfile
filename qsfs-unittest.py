@@ -7,13 +7,19 @@ def CreateMultipleFiles(factory):
 		fi = fs.open("test{0}".format(i),"w")
 	found = fs.listdir("/")
 	if len(found) != 30:
-		os.unlink("test.qsfs")
+		try:
+			os.unlink("test.qsfs")
+		except:
+			pass
 		raise Exception("Wrong number of files")
 	for i in range(30):
 		if "test{0}".format(i) not in found:
 			os.unlink("test.qsfs")
 			raise Exception("Missing file")
-	os.unlink("test.qsfs")
+	try:
+		os.unlink("test.qsfs")
+	except:
+		pass
 	return 1
 
 def ReadAndWrite(factory):
@@ -46,7 +52,7 @@ def ReadAndWrite(factory):
 	del fi2
 	del fs
 
-	fs = qsfs.Qsfs("test.qsfs")
+	fs = factory()
 	#fs._print_layout()
 
 	fi2 =  fs.open("test1","r")
@@ -228,13 +234,20 @@ def FactoryFileStore():
 
 def FactoryStringIO():
 	import cStringIO
-	return qsfs.Qsfs(cStringIO.StringIO, 1)
+	return qsfs.Qsfs(cStringIO.StringIO(), 1)
 
 def UnitTests():
-	factory = FactoryFileStore
+	if 1:
+		factory = FactoryFileStore
+		reloadable = 1
+
+	if 0:
+		factory = FactoryStringIO
+		reloadable = 0
 
 	print "CreateMultipleFiles test", CreateMultipleFiles(factory)
-	print "ReadAndWrite test", ReadAndWrite(factory)
+	if reloadable:
+		print "ReadAndWrite test", ReadAndWrite(factory)
 	print "FileHandleSync test", FileHandleSync(factory)
 	print "CreateAndDeleteFile test", CreateAndDeleteFile(factory)
 	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder(factory)
