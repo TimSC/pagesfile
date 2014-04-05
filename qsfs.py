@@ -1033,7 +1033,6 @@ class Qsfs(object):
 			raise RuntimeError("Filename is too long when utf-8 encoded")
 
 		#Check new folder has space for an extra inode
-		#TODO
 		found = False
 		for ptr in newFolderPtrs:
 			if ptr is None:
@@ -1117,8 +1116,25 @@ class QsfsFile(object):
 		self.cursor = 0
 		self._closed = False
 		self.backfillWithZeros = True
-		if self.mode != "r" and self.mode != "w":
-			raise ValueError("Only r and w modes implemented")
+
+		self.readEnabled = False
+		self.truncateOnOpen = False
+
+		if self.mode.find("r") != -1:
+			self.readEnabled = True
+		if self.mode.find("w") != -1:
+			self.writeEnabled = True
+			if self.meta['fileSize'] > 0:
+				raise RuntimeError("Truncating existing file not implemented")
+		if self.mode.find("a") != -1:
+			self.writeEnabled = True
+			self.cursor = self.meta['fileSize']
+		if self.mode.find("+") != -1:
+			self.readEnabled = True
+			self.writeEnabled = True
+
+		if not self.readEnabled and not self.writeEnabled:
+			raise RuntimeError("Invalid file mode")
 
 	def __del__(self):
 		#print "QsfsFile.__del__"
@@ -1131,7 +1147,7 @@ class QsfsFile(object):
 	def write(self, data):
 		if self._closed:
 			raise IOError("File already closed")
-		if self.mode != "w":
+		if not self.writeEnabled:
 			raise RuntimeError("Not in write mode")
 		if self.cursor >= self.parent.maxFileSize:
 			raise IOError("Cursor beyond maximum file size")
@@ -1200,7 +1216,7 @@ class QsfsFile(object):
 	def read(self, readLen):
 		if self._closed:
 			raise IOError("File already closed")
-		if self.mode != "r":
+		if not self.readEnabled:
 			raise RuntimeError("Not in read mode")
 
 		reading = True
