@@ -1,8 +1,8 @@
 
 import qsfs, os
 
-def CreateMultipleFiles():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def CreateMultipleFiles(factory):
+	fs = factory()
 	for i in range(30):
 		fi = fs.open("test{0}".format(i),"w")
 	found = fs.listdir("/")
@@ -16,8 +16,8 @@ def CreateMultipleFiles():
 	os.unlink("test.qsfs")
 	return 1
 
-def ReadAndWrite():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def ReadAndWrite(factory):
+	fs = factory()
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -59,8 +59,8 @@ def ReadAndWrite():
 
 	return 1
 
-def FileHandleSync():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def FileHandleSync(factory):
+	fs = factory()
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -81,8 +81,8 @@ def FileHandleSync():
 
 	return 1
 
-def CreateAndDeleteFile():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def CreateAndDeleteFile(factory):
+	fs = factory()
 
 	fi =  fs.open("test1","w")
 	if len(fi) != 0:
@@ -101,8 +101,8 @@ def CreateAndDeleteFile():
 		raise Exception("Wrong number of files")
 	return 1
 
-def CreateUseAndDeleteFolder():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def CreateUseAndDeleteFolder(factory):
+	fs = factory()
 	fs.mkdir("/foo", 0)
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
@@ -118,8 +118,8 @@ def CreateUseAndDeleteFolder():
 		raise Exception("Failed to delete folder")
 	return 1
 
-def CreateUseAndDeleteNestedFolder():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def CreateUseAndDeleteNestedFolder(factory):
+	fs = factory()
 	fs.mkdir("/foo", 0)
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
@@ -143,8 +143,8 @@ def CreateUseAndDeleteNestedFolder():
 		raise Exception("Failed to delete folder")
 	return 1
 
-def DeleteInUseThings():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def DeleteInUseThings(factory):
+	fs = factory()
 	fs.mkdir("/foo", 0)
 	if len(fs.listdir("/")) != 1:
 		raise Exception("Failed to create folder")
@@ -173,8 +173,8 @@ def DeleteInUseThings():
 	fi.close()
 	return 1
 
-def RenameFile():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def RenameFile(factory):
+	fs = factory()
 
 	fi = fs.open("test.txt", "w")
 	fi.write("foobar")
@@ -190,8 +190,8 @@ def RenameFile():
 
 	return 1
 
-def MoveFile():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def MoveFile(factory):
+	fs = factory()
 
 	fi = fs.open("test.txt", "w")
 	fi.write("foobar")
@@ -214,8 +214,8 @@ def MoveFile():
 
 	return 1
 
-def FileStat():
-	fs = qsfs.Qsfs("test.qsfs", 1)
+def FileStat(factory):
+	fs = factory()
 	print fs.stat("/")
 	fi = fs.open("test.txt", "w")
 	fi.write("foobar")
@@ -223,16 +223,21 @@ def FileStat():
 	print fs.stat("/foo/test.txt")
 	return 1
 
+def FactoryFileStore():
+	return qsfs.Qsfs("test.qsfs", 1)
+
 def UnitTests():
-	print "CreateMultipleFiles test", CreateMultipleFiles()
-	print "ReadAndWrite test", ReadAndWrite()
-	print "FileHandleSync test", FileHandleSync()
-	print "CreateAndDeleteFile test", CreateAndDeleteFile()
-	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder()
-	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder()
-	print "DeleteInUseThings test", DeleteInUseThings()
-	print "RenameFile test", RenameFile()
-	print "MoveFile test", MoveFile()
+	factory = FactoryFileStore
+
+	print "CreateMultipleFiles test", CreateMultipleFiles(factory)
+	print "ReadAndWrite test", ReadAndWrite(factory)
+	print "FileHandleSync test", FileHandleSync(factory)
+	print "CreateAndDeleteFile test", CreateAndDeleteFile(factory)
+	print "CreateUseAndDeleteFolder test", CreateUseAndDeleteFolder(factory)
+	print "CreateUseAndDeleteNestedFolder test", CreateUseAndDeleteNestedFolder(factory)
+	print "DeleteInUseThings test", DeleteInUseThings(factory)
+	print "RenameFile test", RenameFile(factory)
+	print "MoveFile test", MoveFile(factory)
 
 if __name__=="__main__":
 	UnitTests()	
