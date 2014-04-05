@@ -226,6 +226,10 @@ def FileStat(factory):
 def FactoryFileStore():
 	return qsfs.Qsfs("test.qsfs", 1)
 
+def FactoryStringIO():
+	import cStringIO
+	return qsfs.Qsfs(cStringIO.StringIO, 1)
+
 def UnitTests():
 	factory = FactoryFileStore
 
