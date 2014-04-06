@@ -177,6 +177,10 @@ class HashTableFile(object):
 	def __len__(self):
 		return self.numItems
 
+	def __contains__(self, k):
+		ret, key, val, trashHashes, actualBin = self._probe_bins(k)
+		return ret == 1
+
 	def __setitem__(self, k, v):
 
 		#print "setitem", k , type(k),"=", v
@@ -308,7 +312,7 @@ class HashTableFile(object):
 					if oldValue != v:
 						newFlags = 0x01 #In use
 
-						if isinstance(k, int):
+						if isinstance(v, int):
 							vlo = v
 							newFlags = newFlags | 0x08 #value is a raw int
 						else:
@@ -364,7 +368,10 @@ class HashTableFile(object):
 
 	def _get_label(self, pos):
 		self.handle.seek(pos)
-		labelType = ord(self.handle.read(1))
+		rawType = self.handle.read(1)
+		if len(rawType)==0:
+			raise RuntimeError("?")
+		labelType = ord(rawType)
 
 		if labelType == 0x01:
 			#UTF-8 string
@@ -523,6 +530,7 @@ class HashTableFileIter(object):
 
 			found, flags, key, val = self.parent._attempt_to_read_bin(self.nextBinNum, None, True)
 			self.nextBinNum += 1
+
 			if found == 1:
 				#print "Iterator pos", self.nextBinNum - 1
 				return key
