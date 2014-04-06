@@ -370,7 +370,7 @@ class HashTableFile(object):
 		self.handle.seek(pos)
 		rawType = self.handle.read(1)
 		if len(rawType)==0:
-			raise RuntimeError("?")
+			raise RuntimeError("Error reading label type")
 		labelType = ord(rawType)
 
 		if labelType == 0x01:
