@@ -14,7 +14,7 @@ class HashTableFile(object):
 		Implementation is largely inspired by the CPython dict implementation
 		https://stackoverflow.com/questions/327311/how-are-pythons-built-in-dictionaries-implemented
 		"""
-
+		self.debugMode = False
 		createFile = False
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
@@ -147,10 +147,19 @@ class HashTableFile(object):
 		#print "primary key", primaryKeyHash
 		while not found:
 			#print "look in bin", keyHash
-			ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			try:
+				ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
+			except Exception as err:
+				if self.debugMode:
+					print "keyHash", keyHash
+					print "k", k, type(k)
+					print "self.hashMask", self.hashMask
+					print "probeCount", probeCount
+					print "self.modulusIntHash", self.modulusIntHash
+				raise RuntimeError(err)
 			probeCount += 1
 			inUse = flags & 0x01
-			inTrash = flags & 0x02		
+			inTrash = flags & 0x02
 
 			if ret == 1:
 				return 1, key, val, trashHashes, keyHash
@@ -236,7 +245,15 @@ class HashTableFile(object):
 		if existingRawKey:
 			oldKey = existingKey
 		else:
-			oldKey = self._get_label(existingKey)
+			try:
+				oldKey = self._get_label(existingKey)
+			except:
+				if self.debugMode:
+					print "flags", flags
+					print "existingHash", existingHash
+					print "existingRawKey", existingRawKey
+					print "existingRawValue", existingRawValue
+				raise RuntimeError("Failed to retrieve key data for:" + str(existingKey))
 
 		if not matchAny and oldKey != self._mash_label(k):
 			return 0, flags, None, None #No match
@@ -296,43 +313,47 @@ class HashTableFile(object):
 
 		else:
 			#Check if item already exists
-			if keyHash == existingHash:
-				if existingRawKey:
-					oldKey = existingKey
+			newFlags = 0x01 #In use
+
+			if keyHash != existingHash:
+				#Key does not match expected value
+				raise Exception("Internal error writing to bin")
+
+			if existingRawKey:
+				oldKey = existingKey
+				newFlags = newFlags | 0x04 #key is a raw int
+			else:
+				oldKey = self._get_label(existingKey)
+
+			if oldKey != k:
+				#Key does not match expected value
+				raise Exception("Internal error writing to bin: unmatched keys")
+
+			if existingRawValue:
+				oldValue = existingVal
+			else:
+				oldValue = self._get_label(existingVal)
+
+			if oldValue != v:
+					
+				if isinstance(v, int):
+					vlo = v
+					newFlags = newFlags | 0x08 #value is a raw int
 				else:
-					oldKey = self._get_label(existingKey)
+					vlo = self._write_label(v)
 
-				if oldKey == k:
+				if not existingRawValue:
+					self._mark_label_unused(existingVal)
 
-					if existingRawValue:
-						oldValue = existingVal
-					else:
-						oldValue = self._get_label(existingVal)
-
-					if oldValue != v:
-						newFlags = 0x01 #In use
-
-						if isinstance(v, int):
-							vlo = v
-							newFlags = newFlags | 0x08 #value is a raw int
-						else:
-							vlo = self._write_label(v)
-
-						if not existingRawValue:
-							self._mark_label_unused(existingVal)
-
-						self.handle.seek(binFiOffset)
-						binData = self.binStruct.pack(newFlags, keyHash, existingKey, vlo)
-						self.handle.write(binData)
-						#self.handle.flush() #Massive performance hit
-						if self.verbose >= 2: print "value updated"
-						return 1
-					else:
-						if self.verbose >= 2: print "value unchanged"
-						return 1 #No change was made to value
-
-			#Key does not match expected value
-			raise Exception("Internal error writing to bin")
+				self.handle.seek(binFiOffset)
+				binData = self.binStruct.pack(newFlags, keyHash, existingKey, vlo)
+				self.handle.write(binData)
+				#self.handle.flush() #Massive performance hit
+				if self.verbose >= 2: print "value updated"
+				return 1
+			else:
+				if self.verbose >= 2: print "value unchanged"
+				return 1 #No change was made to value
 
 	def _write_label(self, label):
 		self.handle.seek(0,2) #Seek to end
@@ -348,7 +369,6 @@ class HashTableFile(object):
 			self.handle.write(labelLen)
 			return pos
 		
-
 		#Pickle or JSON is used as the fallback encoder
 		if self.usePickle:
 			enc = pickle.dumps(label, protocol = -1)
