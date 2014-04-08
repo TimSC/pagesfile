@@ -129,13 +129,13 @@ class Qsfs(object):
 			self.maxFileSize = maxFileSize
 
 			#Determine size of structures
-			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / blockSize))
+			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / self.blockSize))
 			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
-			self.sizeBlocksInodeBitmap = int(math.ceil(math.ceil(maxFiles / 8.) / blockSize))
-			self.sizeDataBlocksPlanned = int(math.ceil(float(deviceSize) / blockSize)) #Blocks to contain actual data
-			self.sizeBlocksDataBitmap = int(math.ceil(math.ceil(float(self.sizeDataBlocksPlanned) / 8.) / blockSize)) #Blocks to contain data bitmap
+			self.sizeBlocksInodeBitmap = int(math.ceil(math.ceil(maxFiles / 8.) / self.blockSize))
+			self.sizeDataBlocksPlanned = int(math.ceil(float(deviceSize) / self.blockSize)) #Blocks to contain actual data
+			self.sizeBlocksDataBitmap = int(math.ceil(math.ceil(float(self.sizeDataBlocksPlanned) / 8.) / self.blockSize)) #Blocks to contain data bitmap
 			inodeTableSizeBytes = self.inodeEntrySize * maxFiles
-			self.sizeInodeTableBlocks = int(math.ceil(float(inodeTableSizeBytes) / blockSize))
+			self.sizeInodeTableBlocks = int(math.ceil(float(inodeTableSizeBytes) / self.blockSize))
 
 			#Detemine layout of file system
 			self.inodeBitmapStart = 1 #Starting block num
@@ -144,7 +144,7 @@ class Qsfs(object):
 			self.dataStart = self.inodeTableStart + self.sizeInodeTableBlocks
 
 			#Allocate remaining space to user data
-			self.sizeDataBlocks = int(math.ceil(float(deviceSize) / blockSize)) - self.dataStart #Blocks to contain actual data
+			self.sizeDataBlocks = int(math.ceil(float(deviceSize) / self.blockSize)) - self.dataStart #Blocks to contain actual data
 			if self.sizeDataBlocks <= 0:
 				raise RuntimeError("No space for user data: try reducing maximum number of files")
 
@@ -157,7 +157,7 @@ class Qsfs(object):
 		else:
 			#Read settings
 			self._read_superblock_data()
-			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / blockSize))
+			self.numInodePointers = int(math.ceil(float(self.maxFileSize) / self.blockSize))
 			self.inodeEntrySize = self.inodeMetaStruct.size + self.numInodePointers * self.inodePtrStruct.size
 			self.folderEntrySize = self.folderEntryStruct.size + self.maxFilenameLen
 
