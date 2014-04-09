@@ -31,6 +31,7 @@ class CompressedFileLowLevel(object):
 						self.readOnly = True
 				else:
 					self.handle = open(fi, "rb")
+					self.readOnly = True
 		else:
 			self.handle = fi
 
@@ -402,7 +403,7 @@ class CompressedFile(object):
 	Writes are lazy and done before the memory page is removed
 	"""
 
-	def __init__(self, handle):
+	def __init__(self, handle, readOnly=False):
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
@@ -421,7 +422,10 @@ class CompressedFile(object):
 		if isinstance(handle, CompressedFileLowLevel):
 			self.handle = handle
 		else:
-			self.handle = CompressedFileLowLevel(handle)
+			self.handle = CompressedFileLowLevel(handle, readOnly)
+
+		if readOnly:
+			self.handle.readOnly = readOnly
 
 	def __del__(self):
 		self.flush()
