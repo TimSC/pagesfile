@@ -2,7 +2,8 @@
 import struct, json, os, random, string, hashlib, math, pickle
 
 class HashTableFile(object):
-	def __init__(self, fi, maskBits = 3, init_storage=False, modulusIntHash = 0, hashGradient = 5, hashOffset = 1):
+	def __init__(self, fi, maskBits = 3, 
+		init_storage=False, modulusIntHash = 0, hashGradient = 5, hashOffset = 1, readOnly = False):
 		
 		"""
 		A hash table using open addressing.
@@ -15,6 +16,7 @@ class HashTableFile(object):
 		https://stackoverflow.com/questions/327311/how-are-pythons-built-in-dictionaries-implemented
 		"""
 		self.debugMode = False
+		self.readOnly = readOnly
 		createFile = False
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
@@ -43,6 +45,9 @@ class HashTableFile(object):
 		self.hashOffset = hashOffset
 
 		if createFile or init_storage:
+			if self.readOnly:
+				raise Exception("Cannot format hash structure in read only mode.")
+
 			self.hashMaskSize = maskBits
 			self.hashMask = pow(2, self.hashMaskSize)
 			self._init_storage()
@@ -53,6 +58,9 @@ class HashTableFile(object):
 		self.flush()
 
 	def clear(self):
+		if self.readOnly:
+			raise Exception("Cannot clear table in read only mode.")
+
 		#Clear hash table
 		for binNum in xrange(self.hashMask):
 			if binNum % 100000 == 0 and self.verbose >= 2:
@@ -85,6 +93,9 @@ class HashTableFile(object):
 			cursor += 9 + labelLen
 
 	def flush(self):
+		if self.readOnly:
+			return
+
 		self.handle.seek(4)
 		self.handle.write(self.hashHeaderStruct.pack(self.hashMaskSize, self.numItems, self.binsInUse,
 			self.modulusIntHash, self.hashGradient, self.hashOffset))
@@ -191,6 +202,9 @@ class HashTableFile(object):
 		return ret == 1
 
 	def __setitem__(self, k, v):
+
+		if self.readOnly:
+			raise Exception("Cannot set item when table is in read only mode.")
 
 		#print "setitem", k , type(k),"=", v
 		ret, key, val, trashHashes, actualBin = self._probe_bins(k)

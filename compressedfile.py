@@ -11,15 +11,26 @@ class CompressedFileLowLevel(object):
 	Functionality is extended by CompressedFile
 	"""
 
-	def __init__(self, fi):
+	def __init__(self, fi, readOnly = False):
+
 		createFile = False
+		self.readOnly = readOnly
+
 		if isinstance(fi, str):
 			createFile = not os.path.isfile(fi)
 			if createFile:
 				self.handle = open(fi, "w+b")
 				createFile = True
 			else:
-				self.handle = open(fi, "r+b")
+				if not readOnly:
+					try:
+						self.handle = open(fi, "r+b")
+					except:
+						#Try open as read only
+						self.handle = open(fi, "rb")
+						self.readOnly = True
+				else:
+					self.handle = open(fi, "rb")
 		else:
 			self.handle = fi
 
@@ -45,6 +56,8 @@ class CompressedFileLowLevel(object):
 		self.plainLen = 0
 
 		if createFile:
+			if self.readOnly:
+				raise Exception("Cannot format compressed file when in read only mode")
 			self._init_file_structure()
 		else:
 			self._refresh_page_index()
@@ -64,6 +77,8 @@ class CompressedFileLowLevel(object):
 		self.flush()
 		
 	def flush(self):
+		if self.readOnly:
+			return
 		self.handle.seek(4)
 		self.handle.write(struct.pack(">QQ", self.plainLen, self.pageStep))
 
@@ -416,6 +431,9 @@ class CompressedFile(object):
 		if self.handle is None:
 			return
 
+		if self.handle.readOnly:
+			return
+
 		for i, uncompPos in enumerate(self.pagesChanged):
 			changed = self.pagesChanged[uncompPos]
 			if not changed:
@@ -496,6 +514,9 @@ class CompressedFile(object):
 		return data #Return unwritten data
 
 	def write(self, data):
+
+		if self.handle.readOnly:
+			raise Exception("Compressed file is in read only mode")
 
 		while len(data) > 0:
 			expectedPageStart = self.virtualCursor - (self.virtualCursor % self.handle.pageStep)
