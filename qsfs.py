@@ -1100,7 +1100,10 @@ class Qsfs(object):
 		self._transfer_inode_to_folder(fileInode, oldParentInode, newParentInode, newPathSplit[1])
 
 	def exists(self, path):
-		fileInode = self._filename_to_inode(path)
+		try:
+			fileInode = self._filename_to_inode(path)
+		except RuntimeError:
+			return False #Probably path not found
 		return fileInode is not None
 
 #**************** File class *******************
