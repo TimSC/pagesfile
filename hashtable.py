@@ -3,7 +3,7 @@ import struct, json, os, random, string, hashlib, math, pickle
 
 class HashTableFile(object):
 	def __init__(self, fi, maskBits = 3, 
-		init_storage=False, modulusIntHash = 0, hashGradient = 5, hashOffset = 1, readOnly = False):
+		init_storage=False, modulusIntHash = 0, hashGradient = 5, hashOffset = 1, readOnly = False, createFile = False):
 		
 		"""
 		A hash table using open addressing.
@@ -17,9 +17,9 @@ class HashTableFile(object):
 		"""
 		self.debugMode = False
 		self.readOnly = readOnly
-		createFile = False
 		if isinstance(fi, str):
-			createFile = not os.path.isfile(fi)
+			if not createFile:
+				createFile = not os.path.isfile(fi)
 			self.filename = fi
 			if createFile:
 				self.handle = open(fi, "w+b")
