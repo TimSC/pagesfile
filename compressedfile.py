@@ -11,13 +11,13 @@ class CompressedFileLowLevel(object):
 	Functionality is extended by CompressedFile
 	"""
 
-	def __init__(self, fi, readOnly = False):
+	def __init__(self, fi, readOnly = False, createFile = False):
 
-		createFile = False
 		self.readOnly = readOnly
 
 		if isinstance(fi, str):
-			createFile = not os.path.isfile(fi)
+			if not createFile:
+				createFile = not os.path.isfile(fi)
 			if createFile:
 				self.handle = open(fi, "w+b")
 				createFile = True
@@ -403,7 +403,7 @@ class CompressedFile(object):
 	Writes are lazy and done before the memory page is removed
 	"""
 
-	def __init__(self, handle, readOnly=False):
+	def __init__(self, handle, readOnly=False, createFile = False):
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
@@ -422,7 +422,7 @@ class CompressedFile(object):
 		if isinstance(handle, CompressedFileLowLevel):
 			self.handle = handle
 		else:
-			self.handle = CompressedFileLowLevel(handle, readOnly)
+			self.handle = CompressedFileLowLevel(handle, readOnly, createFile)
 
 		if readOnly:
 			self.handle.readOnly = readOnly
