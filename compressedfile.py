@@ -13,8 +13,6 @@ class CompressedFileLowLevel(object):
 
 	def __init__(self, fi, readOnly = False, createFile = False):
 
-		print fi, os.path.exists(fi), os.path.isfile(fi)
-
 		if not os.path.isfile(fi) and not createFile:
 			raise IOError("File not found")
 
