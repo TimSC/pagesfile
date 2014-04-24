@@ -13,6 +13,11 @@ class CompressedFileLowLevel(object):
 
 	def __init__(self, fi, readOnly = False, createFile = False):
 
+		print fi, os.path.exists(fi), os.path.isfile(fi)
+
+		if not os.path.isfile(fi) and not createFile:
+			raise IOError("File not found")
+
 		self.readOnly = readOnly
 
 		if isinstance(fi, str):
@@ -216,7 +221,13 @@ class CompressedFileLowLevel(object):
 
 		if meta['method'] == "zlib":
 			import zlib
-			plainData = zlib.decompress(binData)
+			try:
+				plainData = zlib.decompress(binData)
+			except zlib.error as err:
+				if 0:
+					print "Saving zlib data error info to file..."
+					pickle.dump(binData, open("bindata.dat"), protocol=-1)
+				raise err
 			if len(plainData) != meta['uncompSize']:
 				raise Exception("Extracted data has incorrect length")
 			return plainData

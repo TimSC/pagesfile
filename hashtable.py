@@ -55,6 +55,7 @@ class HashTableFile(object):
 			self._read_storage_params()
 
 	def __del__(self):
+		print "hash table flush"
 		self.flush()
 
 	def clear(self):
