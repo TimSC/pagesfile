@@ -11,7 +11,7 @@ class CompressedFileLowLevel(object):
 	Functionality is extended by CompressedFile
 	"""
 
-	def __init__(self, fi, readOnly = False, createFile = True):
+	def __init__(self, fi, readOnly = False, createFile = False):
 
 		if not os.path.isfile(fi) and not createFile:
 			raise IOError("File not found")
@@ -412,7 +412,7 @@ class CompressedFile(object):
 	Writes are lazy and done before the memory page is removed
 	"""
 
-	def __init__(self, handle, readOnly=False, createFile = True):
+	def __init__(self, handle, readOnly=False, createFile = False):
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
