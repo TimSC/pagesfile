@@ -11,7 +11,7 @@ class CompressedFileLowLevel(object):
 	Functionality is extended by CompressedFile
 	"""
 
-	def __init__(self, fi, readOnly = False, createFile = False):
+	def __init__(self, fi, readOnly = False, createFile = False, method = "zlib"):
 
 		if not os.path.isfile(fi) and not createFile:
 			raise IOError("File not found")
@@ -39,7 +39,7 @@ class CompressedFileLowLevel(object):
 			self.handle = fi
 
 		#self.method = "bz2 "
-		self.method = "zlib"
+		self.method = method
 		self.virtualCursor = 0
 		self.pageStep = 1000000
 		self.useTrashThreshold = 0.9
@@ -222,7 +222,7 @@ class CompressedFileLowLevel(object):
 			try:
 				plainData = zlib.decompress(binData)
 			except zlib.error as err:
-				if 0:
+				if 1:
 					print "Saving zlib data error info to file..."
 					pickle.dump(binData, open("bindata.dat"), protocol=-1)
 				raise err
@@ -412,7 +412,7 @@ class CompressedFile(object):
 	Writes are lazy and done before the memory page is removed
 	"""
 
-	def __init__(self, handle, readOnly=False, createFile = False):
+	def __init__(self, handle, readOnly=False, createFile = False, method = "zlib"):
 		
 		self.virtualCursor = 0
 		self.maxCachePages = 50
@@ -431,7 +431,7 @@ class CompressedFile(object):
 		if isinstance(handle, CompressedFileLowLevel):
 			self.handle = handle
 		else:
-			self.handle = CompressedFileLowLevel(handle, readOnly, createFile)
+			self.handle = CompressedFileLowLevel(handle, readOnly, createFile, method)
 
 		if readOnly:
 			self.handle.readOnly = readOnly

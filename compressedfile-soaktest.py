@@ -2,7 +2,7 @@ import compressedfile, random, time, pickle
 import numpy as np
 
 if __name__=="__main__":
-	fi = compressedfile.CompressedFile("soaktest.dat", createFile=True)
+	fi = compressedfile.CompressedFile("soaktest.dat", createFile=True, method = "zlib")
 
 	globalRandSeed = 0
 	random.seed(globalRandSeed)
@@ -20,7 +20,7 @@ if __name__=="__main__":
 	oldSeed = None
 
 	while 1:
-		print "Begin interation", globalRandSeed
+		print "Begin iteration", globalRandSeed
 		globalRandSeed += 1
 		random.seed(globalRandSeed)
 		np.random.seed(globalRandSeed)
@@ -43,6 +43,7 @@ if __name__=="__main__":
 				checkok = (readback == oldData[binNum])
 				if not checkok:
 					print "Readback failed. saving to file.", binNum
+					import pickle
 					pickle.dump(oldData[binNum], open("expected.dat","wb"), protocol=-1)
 					pickle.dump(readback, open("got.dat","wb"), protocol=-1)
 					fi.flush()

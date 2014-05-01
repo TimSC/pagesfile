@@ -161,13 +161,13 @@ class HashTableFile(object):
 			try:
 				ret, flags, key, val = self._attempt_to_read_bin(keyHash, k, False)
 			except Exception as err:
-				if self.debugMode:
+				if 1 or self.debugMode:
 					print "keyHash", keyHash
 					print "k", k, type(k)
 					print "self.hashMask", self.hashMask
 					print "probeCount", probeCount
 					print "self.modulusIntHash", self.modulusIntHash
-				raise RuntimeError(err)
+				raise RuntimeError(str(err)+" for key "+str(k)+" "+str(type(k)))
 			probeCount += 1
 			inUse = flags & 0x01
 			inTrash = flags & 0x02
