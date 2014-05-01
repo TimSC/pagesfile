@@ -11,7 +11,7 @@ if __name__=="__main__":
 	globalRandSeed = 0
 	random.seed(globalRandSeed)
 	np.random.seed(globalRandSeed)
-	numBins = 100
+	numBins = 1000
 	
 	binSizes = [random.randint(0,500000) for i in range(numBins)]
 	print "Total test size", sum(binSizes)
