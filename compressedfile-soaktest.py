@@ -1,13 +1,17 @@
-import compressedfile, random, time, pickle
+import compressedfile, random, time, pickle, sys
 import numpy as np
 
 if __name__=="__main__":
-	fi = compressedfile.CompressedFile("soaktest.dat", createFile=True, method = "zlib")
+	method = "zlib"
+	if len(sys.argv) > 1:
+		method = sys.argv[1]
+
+	fi = compressedfile.CompressedFileLowLevel("soaktest-{0}.dat".format(method), createFile=True, method = method)
 
 	globalRandSeed = 0
 	random.seed(globalRandSeed)
 	np.random.seed(globalRandSeed)
-	numBins = 1000
+	numBins = 100
 	
 	binSizes = [random.randint(0,500000) for i in range(numBins)]
 	print "Total test size", sum(binSizes)
@@ -20,7 +24,7 @@ if __name__=="__main__":
 	oldSeed = None
 
 	while 1:
-		print "Begin iteration", globalRandSeed
+		print "Begin iteration", globalRandSeed, method
 		globalRandSeed += 1
 		random.seed(globalRandSeed)
 		np.random.seed(globalRandSeed)
@@ -39,10 +43,13 @@ if __name__=="__main__":
 
 			if oldData is not None:
 				fi.seek(binOffsets[binNum])
-				readback = fi.read(binSizes[binNum])
+				#readback = fi.read(binSizes[binNum])
+				readback = compressedfile.MultiRead(fi, binSizes[binNum])
 				checkok = (readback == oldData[binNum])
 				if not checkok:
 					print "Readback failed. saving to file.", binNum
+					print [ord(c) for c in oldData[binNum][:30]], len(oldData[binNum])
+					print [ord(c) for c in readback[:30]], len(readback)
 					import pickle
 					pickle.dump(oldData[binNum], open("expected.dat","wb"), protocol=-1)
 					pickle.dump(readback, open("got.dat","wb"), protocol=-1)

@@ -1,4 +1,4 @@
-import bz2, struct, os, copy, gzip, time, random
+import struct, os, copy, time, random
 
 class CompressedFileLowLevel(object):
 
@@ -17,6 +17,10 @@ class CompressedFileLowLevel(object):
 			raise IOError("File not found")
 
 		self.readOnly = readOnly
+
+		#Pad method to four characters
+		while len(method) < 4:
+			method = method + " "
 
 		if isinstance(fi, str):
 			if not createFile:
@@ -230,6 +234,10 @@ class CompressedFileLowLevel(object):
 				raise Exception("Extracted data has incorrect length")
 			return plainData
 
+		if meta['method'] == "null":
+			plainData = binData
+			return plainData
+
 		raise Exception("Not implemented")
 
 	def read(self, bytes=None):
@@ -318,9 +326,11 @@ class CompressedFileLowLevel(object):
 			import zlib
 			encodedData = zlib.compress(str(plain))
 
-		if encodedData == None:
-			raise Exception("Not implemented compression:" + meta['method'])
+		if meta['method'] == "null":
+			encodedData = plain
 
+		if encodedData == None:
+			raise Exception("Not implemented compression: '" + meta['method'] + "'")
 
 		if meta['uncompPos'] not in self.pageIndex:
 			self.pageIndex[meta['uncompPos']] = meta
@@ -401,6 +411,16 @@ class CompressedFileLowLevel(object):
 		footer = self.footerStruct.pack(meta['allocSize'])
 		self.handle.write(footer)
 		self.handle.write("pend")
+
+def MultiRead(handle, maxLen):
+	buff = []
+	while 1:
+		dat = handle.read(maxLen)
+		if len(dat) > 0:
+			buff.append(dat)
+			maxLen -= len(dat)
+		else:
+			return "".join(buff)
 
 # ****************************************************************************
 
