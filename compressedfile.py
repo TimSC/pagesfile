@@ -415,6 +415,8 @@ class CompressedFileLowLevel(object):
 def MultiRead(handle, maxLen):
 	buff = []
 	while 1:
+		if maxLen == 0:
+			return "".join(buff)
 		dat = handle.read(maxLen)
 		if len(dat) > 0:
 			buff.append(dat)
