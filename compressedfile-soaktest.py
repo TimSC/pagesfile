@@ -6,7 +6,7 @@ if __name__=="__main__":
 	if len(sys.argv) > 1:
 		method = sys.argv[1]
 
-	fi = compressedfile.CompressedFileLowLevel("soaktest-{0}.dat".format(method), createFile=True, method = method)
+	fi = compressedfile.CompressedFile("soaktest-{0}.dat".format(method), createFile=True, method = method)
 
 	globalRandSeed = 0
 	random.seed(globalRandSeed)
@@ -48,6 +48,7 @@ if __name__=="__main__":
 				checkok = (readback == oldData[binNum])
 				if not checkok:
 					print "Readback failed. saving to file.", binNum
+					print "Matches", sum([x==y for x, y in zip(readback, oldData[binNum])])
 					print [ord(c) for c in oldData[binNum][:30]], len(oldData[binNum])
 					print [ord(c) for c in readback[:30]], len(readback)
 					import pickle

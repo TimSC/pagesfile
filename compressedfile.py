@@ -17,6 +17,7 @@ class CompressedFileLowLevel(object):
 			raise IOError("File not found")
 
 		self.readOnly = readOnly
+		self.debugMode = False
 
 		#Pad method to four characters
 		while len(method) < 4:
@@ -226,7 +227,7 @@ class CompressedFileLowLevel(object):
 			try:
 				plainData = zlib.decompress(binData)
 			except zlib.error as err:
-				if 1:
+				if self.debugMode:
 					print "Saving zlib data error info to file..."
 					pickle.dump(binData, open("bindata.dat"), protocol=-1)
 				raise err
@@ -404,7 +405,17 @@ class CompressedFileLowLevel(object):
 		self.handle.write(meta['method'])
 
 		#Copy data
+		tmp = self.handle.tell()
 		self.handle.write(encoded)
+
+		if self.debugMode:
+			self.handle.seek(tmp)
+			readback = self.handle.read(len(encoded))
+			if readback != encoded:
+				print len(encoded), len(readback)
+				print "matches", sum([x==y for x, y in zip(encoded, readback)])
+
+				raise RuntimeError("Readback failed")
 
 		#Footer
 		self.handle.seek(meta['pagePos'] + 8 + self.headerStruct.size + meta['allocSize'])
